@@ -1,25 +1,59 @@
 ---
 name: shopee-listing-upload
-description: "shopee-sourcingスキルがGoogle Sheetsに記録した本日分のリサーチ候補商品を読み込み、Shopee一括出品テンプレート形式に変換して、国ごと(SG/MY/TH/PH等)に出品ファイル(xlsx)を生成する。「出品ファイル作って」「本日の出品ファイル作成」「Shopeeアップロード用ファイル」という依頼で起動する。"
+description: "shopee-sourcingスキルがGoogle Sheetsに記録した本日分のリサーチ候補商品、または人が直接指定したAmazon ASINを読み込み、Shopee一括出品テンプレート形式に変換して、国ごと(SG/MY/TH/PH等)に出品ファイル(xlsx)を生成する。「出品ファイル作って」「本日の出品ファイル作成」「Shopeeアップロード用ファイル」「このASINで出品ファイル作って」という依頼で起動する。"
 ---
 
 # Shopee 出品ファイル生成
 
 ## 目的
 
-`shopee-sourcing`スキルがGoogle Sheetsに記録した本日分の商品リサーチ結果を読み込み、
-Shopeeの一括出品用テンプレート(`template/fixed_template.xlsx`)の形式に変換して、
+以下いずれかの方法で対象商品を集め、Shopeeの一括出品用テンプレートの形式に変換して、
 国ごとに出品ファイル(xlsx)を生成する。
 
-このスキルは`shopee-sourcing`の**後工程**にあたる。先にリサーチが実行され、
-Google Sheetsに当日分のデータが記録済みであることを前提とする。
+- **A. 日次リサーチ経由**: `shopee-sourcing`スキルがGoogle Sheetsに記録した本日分の商品リサーチ結果を読み込む(このスキルの従来の後工程モード)
+- **B. ASIN直接投入**: 人がAmazon ASIN(1件〜複数件)と対象国を直接指定する(新規追加モード)
+
+いずれのモードでも、4〜10のテンプレート生成ロジックは共通。
+
+## 起動モードの判定
+
+- 「本日の出品ファイル作成」「出品ファイル作って」など日付・当日を前提にした依頼 → **A. 日次リサーチ経由**
+- 「この ASIN で出品ファイル作って」「B0XXXXXXXX を SG 向けに出品したい」のように
+  ASINコードが依頼文中に明示されている場合 → **B. ASIN直接投入**
+- 両方の要素が混在する場合(例:「今日の分に加えてこのASINも」)は、両モードの対象行を
+  合算してから4以降の処理を行う。
 
 ## 入力
+
+### モードA: 日次リサーチ経由
 
 - Google Sheets(shopee-sourcingスキルが書き込んでいるシート)
   列構成: 日付 / 国 / Shopee商品名 / Shopee価格 / Shopeeリンク / トレンド根拠 /
           Amazon商品名 / ASIN / Amazon価格 / Amazonリンク / 出品者数目安 / メモ
-- `template/fixed_template.xlsx`(Shopee公式の一括出品テンプレート・基本版。ヘッダー構成・列順は変更しない)
+- Google Sheetsから「日付」列が本日日付の行を取得する。
+
+### モードB: ASIN直接投入
+
+- 人から提示されたASINのリスト(例: `B006OIZPGG, B009HQZW6K`)と対象国(例: `SG`。
+  未指定の場合は対応国すべて(SG/MY/TH/PH/VN/TW/BR)に展開せず、必ず対象国を確認してから進める)。
+- ASINごとにAmazon.co.jpの商品ページ(`https://www.amazon.co.jp/dp/{ASIN}`)を実際にFetchし、
+  以下を読み取る(API・スクレイピングツールは使わず、`amazon-stock-check`スキルと同じ方式で
+  ページを直接読む):
+  - 商品名(原題。そのままコピーはせず4-1でのタイトル生成の参考情報として使う)
+  - 価格(JPY)。取得できない場合は要確認フラグを立てて空欄扱いにする
+  - 在庫有無の表示。在庫なしと判断した場合はその旨をレポートし、その商品は
+    出品ファイル生成の対象から除外する(在庫が不明瞭な場合は要確認フラグを立てて続行する)
+  - 商品カテゴリの手がかり(パンくずリスト等)
+  - トレンド根拠にあたる情報はないため、この項目は空欄とする
+- 取得した情報を、モードAと同じ内部フォーマット(日付/国/Shopee商品名/Shopee価格/
+  Shopeeリンク/トレンド根拠/Amazon商品名/ASIN/Amazon価格/Amazonリンク/出品者数目安/メモ)
+  に変換してから、4以降の共通処理に渡す。「Shopee価格」は未確定として扱い、3で自動計算する。
+
+### 共通
+
+- `template/Shopee_mass_upload_basic_template.xlsx`
+  (Shopee公式の一括出品テンプレート・基本版。2026-08-11時点でダウンロードした最新版。
+  ヘッダー構成・列順は変更しない。詳細な列定義は下記「基本テンプレートの列定義」を参照)
 - `template/Shopee_mass_upload_template_MY.xlsx`(マレーシア専用テンプレート。基本版と列構成が一部異なるため、MY向け出品ファイルは必ずこちらを使う)
 - `pricing_calc.py`(価格計算ロジック)
 
@@ -34,16 +68,64 @@ Shopeeは国ごとに配送チャネル列や価格倍率上限、商品名の�
 | SG | `template/Shopee_mass_upload_template_SG.xlsx` | 配送チャネル列が4列(Doorstep Delivery/5-Day Delivery/Collection Points/SPX Express Lockers)。商品名は10〜255文字。価格0.10〜999999.00 |
 | TH | `template/Shopee_mass_upload_template_TH.xlsx` | 配送チャネル列が「International Express (Japan)」の1列。商品名は20〜255文字。価格1〜500000 |
 | PH | `template/Shopee_mass_upload_template_PH.xlsx` | 配送チャネル列が「Standard International」の1列。商品名は20〜255文字。価格5〜100000 |
-| その他(VN/TW/BR) | `template/fixed_template.xlsx`(基本版) | 専用テンプレート未入手。入手次第追加する |
+| その他(VN/TW/BR) | `template/Shopee_mass_upload_basic_template.xlsx`(基本版) | 専用テンプレート未入手。入手次第追加する |
 
 他国の専用テンプレートが提供された場合も、同様に`template/`配下に追加し、
 この表を更新すること。基本版と列数・列順が異なる場合があるため、
 書き込み前に必ずヘッダー行(1〜3行目)を確認してから該当列にマッピングする。
 
+### 基本テンプレートの列定義(Shopee_mass_upload_basic_template.xlsx)
+
+`Template`シートは1〜3行目がヘッダー(1行目:内部キー、3行目:表示名)、
+4行目以降が必須区分・入力ガイド、実データは**4行目以降**に1商品1行で書き込む
+(既存ファイルの4〜6行目はガイド文なので、それを踏まえた上で実データは
+必ずガイド行より下の行、またはガイド行を上書きせずデータ専用行として追記する。
+既存の運用ではデータは4行目以降に直接書き込んでいるため、その慣習を踏襲する)。
+
+| 列 | 表示名 | 必須区分 | 備考 |
+|---|---|---|---|
+| A | Category | Optional | 7で推定したカテゴリID。確信度が低ければ空欄 |
+| B | Product Name | Mandatory | 4-1で生成 |
+| C | Product Description | Mandatory | 4-2で生成(末尾にJANコード) |
+| D | Maximum Purchase Quantity | Optional | 空欄でよい |
+| E | Max Purchase Qty - Start Date | Conditional Mandatory | 空欄でよい |
+| F | Max Purchase Qty - Time Period | Conditional Mandatory | 空欄でよい |
+| G | Max Purchase Qty - End Date | Conditional Mandatory | 空欄でよい |
+| H | Minimum Purchase Quantity | Optional | 空欄でよい |
+| I | Parent SKU | Optional | ASINをそのまま入れる(下記ルール) |
+| J | Variation Integration No. | Conditional Mandatory | バリエーションがない商品は空欄 |
+| K | Variation Name1 | Conditional Mandatory | バリエーションがない商品は空欄 |
+| L | Option for Variation 1 | Conditional Mandatory | 同上 |
+| M | Image per Variation | Conditional Mandatory | 同上 |
+| N | Variation Name2 | Conditional Mandatory | 同上 |
+| O | Option for Variation 2 | Conditional Mandatory | 同上 |
+| P | Price | Mandatory | 3で算出 |
+| Q | Stock | Conditional Mandatory | 初期値の方針は別途確認(未指定なら仮値10などを入れ要確認フラグ) |
+| R | SKU | Optional | ASINをそのまま入れる(下記ルール) |
+| S | Size Chart Template | Conditional Mandatory | 空欄でよい |
+| T | Size Chart Image | Conditional Mandatory | 空欄でよい |
+| U | Cover image | Optional | 5で生成した仮画像URL(未接続時は空欄) |
+| V〜AC | Item Image 1〜8 | Optional | 同上、未使用なら空欄 |
+| AD | Weight | Mandatory | 6で推定 |
+| AE | Length | Conditional Mandatory | 6で推定(不明なら要確認フラグを立てて一般的な仮値) |
+| AF | Width | Conditional Mandatory | 同上 |
+| AG | Height | Conditional Mandatory | 同上 |
+| AH | Doorstep Delivery (Overseas) | Conditional Mandatory | On/Off。少なくとも1チャネルはOnにする必要あり(Shopee側の必須ルール) |
+| AI | Collection Points (Overseas) | Conditional Mandatory | 同上 |
+| AJ | SPX Express Lockers (Overseas) | Conditional Mandatory | 同上 |
+| AK | Pre-order DTS | Optional | 空欄でよい(`Pre-order DTS Range`シートに有効値の一覧あり) |
+| AL | Fail Reason | — | Shopee側が出力に使う列。書き込み対象外(空欄のまま) |
+
+**配送チャネルのデフォルト方針**: AH/AI/AJの少なくとも1つをOnにしないとShopee側で
+アップロードエラーになる。方針が別途指定されない限り、基本版では3チャネルすべて
+Onにする(過去の国別テンプレートでの運用にならい、配送手段を絞る必要が出てきたら
+このデフォルトを見直す)。
+
 ## 処理手順
 
-### 1. 当日分の対象行を取得
-Google Sheetsから「日付」列が本日日付の行を取得する。
+### 1. 対象行を取得
+モードAはGoogle Sheetsから当日分の行、モードBはASIN直接投入時にAmazon商品ページ
+から取得した情報を、共通フォーマットの行として用意する。
 
 ### 2. 国ごとにグループ化
 対応国: SG / MY / TH / PH / VN / TW / BR。未対応の国コードはエラーリストに記録し、
@@ -62,8 +144,9 @@ Google Sheetsから「日付」列が本日日付の行を取得する。
 
 ### 4. 商品タイトル・商品説明の草案作成
 
-「Shopee商品名」「Amazon商品名」「ASIN」「トレンド根拠」を元に、以下のペルソナ・
-制約条件に従って**オリジナルな**商品タイトル・商品説明文を新規に英語で執筆する。
+「Shopee商品名」「Amazon商品名」「ASIN」「トレンド根拠」(モードBの場合は
+Amazon商品ページから読み取った商品名等)を元に、以下のペルソナ・制約条件に従って
+**オリジナルな**商品タイトル・商品説明文を新規に英語で執筆する。
 Amazon商品ページの説明文・レビュー文をそのまま転記・要約転載しない。
 
 #### ペルソナ
@@ -140,30 +223,39 @@ Amazon商品画像の複製・トレースは行わない。ファイル名に`_
 ### 6. 重量・サイズの設定
 「ASIN」や商品カテゴリから判断できる重量を推定し、テンプレートの重量欄へ入力する。
 断定できない場合は商品カテゴリから一般的な重量帯を推定した仮値を入力し、要確認フラグを立てる。
+縦横高さ(Length/Width/Height)も同様に、判断できる場合はテンプレートの該当欄へ入力し、
+不明な場合は一般的な仮値を入れて要確認フラグを立てる。
 
 ### 7. カテゴリIDの推定
 商品名からShopeeカテゴリツリーに近いカテゴリIDを推定する。確信度が低ければ
 空欄のまま要確認フラグを立てる。
 
-### 8. テンプレートへの書き込み
+### 8. 配送チャネルの設定
+基本テンプレートの場合、AH(Doorstep Delivery)/AI(Collection Points)/AJ(SPX Express
+Lockers)の3列に「On」を入れる(上記「配送チャネルのデフォルト方針」を参照)。
+国別専用テンプレートを使う場合は、そのテンプレートのチャネル列構成に従う。
+
+### 9. テンプレートへの書き込み
 国別テンプレートの使い分け表に従い、該当する`template/*.xlsx`をコピーし、
 Templateシートの4行目以降に1商品1行(variationがある場合は複数行)で書き込む。
 ヘッダー行(1〜3行目)・シート名・列順は変更しない。
-**SKU列**: Google Sheetsの「ASIN」列の値をそのままSKU列に入れる
-(全国共通のルール)。ASINが空の商品は、SKU列も空欄のままにし要確認フラグを立てる。
-**Parent SKU列**: SKU列と同様に、Google Sheetsの「ASIN」列の値をそのまま
-Parent SKU列に入れる(全国共通のルール)。従来の自動採番形式(例: MY-20260802-01)
-は使用しない。ASINが空の商品は、Parent SKU列も空欄のままにし要確認フラグを立てる。
+**SKU列**: Google Sheetsの「ASIN」列(またはモードBで指定されたASIN)の値を
+そのままSKU列に入れる(全国共通のルール)。ASINが空の商品は、SKU列も空欄のままにし
+要確認フラグを立てる。
+**Parent SKU列**: SKU列と同様に、ASINの値をそのままParent SKU列に入れる
+(全国共通のルール)。従来の自動採番形式(例: MY-20260802-01)は使用しない。
+ASINが空の商品は、Parent SKU列も空欄のままにし要確認フラグを立てる。
 
-### 9. 出力
+### 10. 出力
 - ファイル名: `Shopee_upload_{国コード}_{YYYY-MM-DD}.xlsx`
 - 保存先: Google Driveの指定フォルダ
 - 国ごとに、その国の商品行のみを含める
 - 保存方法: 添付ファイルとして渡すのではなく、Google Drive MCPのcreate_fileツールを使い、xlsxファイルをbase64エンコードした状態で直接Driveの指定フォルダにアップロードする。アップロード後、ファイルへのリンクを実行結果として報告する。
-- 
-### 10. サマリーレポート
+
+### 11. サマリーレポート
 生成件数、要確認フラグの件数・内訳(JANコードにプレースホルダー
-「JAN: 0000000000000(仮)」を使用した件数を含む)、処理できなかった行を報告する。
+「JAN: 0000000000000(仮)」を使用した件数、在庫なしで除外した件数を含む)、
+処理できなかった行を報告する。
 
 ## 絶対に守ること
 
@@ -173,3 +265,5 @@ Parent SKU列に入れる(全国共通のルール)。従来の自動採番形�
 - 「要確認」フラグが立った項目(仮画像・仮重量・推定カテゴリ・自動計算価格)を含む
   商品は、人による最終確認前にShopeeへ実際にアップロードしない。
   このスキルは「出品ファイルの下書き作成」までを担当する。
+- モードB(ASIN直接投入)でAmazon商品ページの在庫が「なし」と判明した商品は、
+  出品ファイルの対象に含めない。
