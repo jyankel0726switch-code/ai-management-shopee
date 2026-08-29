@@ -122,16 +122,16 @@ Shopeeへの登録に失敗した。** 各テンプレートの`Upload sample`�
 | F | Max Purchase Qty - Time Period | Conditional Mandatory | 空欄でよい |
 | G | Max Purchase Qty - End Date | Conditional Mandatory | 空欄でよい |
 | H | Minimum Purchase Quantity | Optional | 空欄でよい |
-| I | Parent SKU | Optional | ASINをそのまま入れる(下記ルール) |
-| J | Variation Integration No. | Conditional Mandatory | バリエーションがない商品は空欄 |
-| K | Variation Name1 | Conditional Mandatory | バリエーションがない商品は空欄 |
-| L | Option for Variation 1 | Conditional Mandatory | 同上 |
-| M | Image per Variation | Conditional Mandatory | 同上 |
-| N | Variation Name2 | Conditional Mandatory | 同上 |
-| O | Option for Variation 2 | Conditional Mandatory | 同上 |
+| I | Parent SKU | Optional | バリエーションなし商品はASINをそのまま入れる。バリエーションあり商品(軸1〜2)は代表ASINを全行共通で入れる(下記「バリエーション出品ルール」参照) |
+| J | Variation Integration No. | Conditional Mandatory | バリエーションなし商品は空欄。ある場合は同一商品グループの全行に共通の連番を入れる |
+| K | Variation Name1 | Conditional Mandatory | バリエーションなし商品は空欄。ある場合は1軸目の軸名(例:色) |
+| L | Option for Variation 1 | Conditional Mandatory | バリエーションなし商品は空欄。ある場合は1軸目の値(例:ブラック) |
+| M | Image per Variation | Conditional Mandatory | バリエーションごとに画像が異なる場合に設定。取得できなければ空欄 |
+| N | Variation Name2 | Conditional Mandatory | 軸が1つ以下の商品は空欄。2軸目がある場合のみ軸名(例:サイズ) |
+| O | Option for Variation 2 | Conditional Mandatory | 同上。2軸目の値(例:Mサイズ) |
 | P | Price | Mandatory | 3で算出 |
 | Q | Stock | Conditional Mandatory | 5.5のルールに従って設定(要確認フラグは立てない) |
-| R | SKU | Optional | ASINをそのまま入れる(下記ルール) |
+| R | SKU | Optional | バリエーションなし商品はASINをそのまま入れる。バリエーションあり商品は各バリエーションの個別ASINがあればそれを、なければ`{親ASIN}-01`形式の枝番を入れる(下記「バリエーション出品ルール」参照) |
 | S | Size Chart Template | Conditional Mandatory | 空欄でよい |
 | T | Size Chart Image | Conditional Mandatory | 空欄でよい |
 | U | Cover image | Optional | 5で取得したAmazon商品ページの画像のうち1枚目(メイン画像。取得失敗時は空欄) |
@@ -151,6 +151,17 @@ Shopeeへの登録に失敗した。** 各テンプレートの`Upload sample`�
 Onにする(過去の国別テンプレートでの運用にならい、配送手段を絞る必要が出てきたら
 このデフォルトを見直す)。
 
+### バリエーション出品ルール
+1. Amazon商品ページのバリエーション選択UI(色・サイズ等のセレクタ)を確認し、バリエーション軸の数を判定する。
+2. **軸が1〜2つ**の場合:バリエーション出品として処理する。
+   - Parent SKU:親となるASIN(代表ASIN)
+   - SKU:各バリエーションに個別のASINがあればそのASINをそのまま使用。個別ASINが取得できないバリエーション(同一ASIN内の選択肢のみの場合等)は`{親ASIN}-01`のような枝番で代替
+   - Variation Name1 / Option for Variation 1:1軸目(例:色/ブラック)
+   - Variation Name2 / Option for Variation 2:2軸目がある場合のみ(例:サイズ/Mサイズ)
+   - Variation Integration No.:同一商品グループの全行に共通の連番を付与
+   - 価格・在庫・重量・画像はバリエーションごとに個別取得を試み、取得できない項目は親情報を流用
+3. **軸が3つ以上**の場合:この商品は自動処理の対象外とし、「要確認:バリエーション軸3以上」のフラグを立ててレポートに記載するのみとし、出品ファイルは生成しない。
+
 ## 処理手順
 
 ### 1. 対象行を取得
@@ -160,6 +171,11 @@ Onにする(過去の国別テンプレートでの運用にならい、配送�
 ### 2. 国ごとにグループ化
 対応国: SG / MY / TH / PH / VN / TW / BR。未対応の国コードはエラーリストに記録し、
 その行はスキップする。
+
+### 2.5 バリエーション判定とレコード分割
+上記「バリエーション出品ルール」に従い、対象商品ごとにバリエーション軸の数を判定する。
+軸が1〜2の商品はバリエーションの数だけ行を分割してから3以降の処理を行う。
+軸が3以上の商品はこの時点で処理対象から除外し、要確認フラグ付きでレポート対象にのみ加える。
 
 ### 3. 価格算出
 `pricing_calc.py`の`calc_local_price()`を使用する。
@@ -303,12 +319,14 @@ Templateシートの**7行目以降**に1商品1行(variationがある場合は�
   Shopeeで登録実績のあるファイルは`xl/sharedStrings.xml`を持つ共有文字列形式である。
   保存後に共有文字列形式へ変換し、実績ファイルと同じzip構成に揃えること。
 - 生成後は、過去に登録が通ったファイルと1〜6行目・zip構成を突き合わせて検証する。
-**SKU列**: Google Sheetsの「ASIN」列(またはモードBで指定されたASIN)の値を
-そのままSKU列に入れる(全国共通のルール)。ASINが空の商品は、SKU列も空欄のままにし
-要確認フラグを立てる。
-**Parent SKU列**: SKU列と同様に、ASINの値をそのままParent SKU列に入れる
-(全国共通のルール)。従来の自動採番形式(例: MY-20260802-01)は使用しない。
-ASINが空の商品は、Parent SKU列も空欄のままにし要確認フラグを立てる。
+**SKU列**: バリエーションがない商品は、Google Sheetsの「ASIN」列(またはモードBで指定
+されたASIN)の値をそのままSKU列に入れる。バリエーションがある商品は「バリエーション
+出品ルール」に従い、各バリエーションの個別ASIN、または枝番を入れる。ASINが空の商品は、
+SKU列も空欄のままにし要確認フラグを立てる。
+**Parent SKU列**: バリエーションがない商品は、SKU列と同様にASINの値をそのままParent SKU
+列に入れる。バリエーションがある商品は、グループ内の全行に共通の代表ASINを入れる
+(従来の自動採番形式(例: MY-20260802-01)は使用しない)。ASINが空の商品は、Parent SKU列も
+空欄のままにし要確認フラグを立てる。
 
 ### 10. 出力
 - ファイル名: `Shopee_upload_{国コード}_{YYYY-MM-DD}.xlsx`(YYYY-MM-DDは上記「日付・タイムゾーンに関する重要ルール」に従い**JST基準**の日付とする)
@@ -318,7 +336,8 @@ ASINが空の商品は、Parent SKU列も空欄のままにし要確認フラグ
 
 ### 11. サマリーレポート
 生成件数、要確認フラグの件数・内訳(JANコードにプレースホルダー
-「JAN: 0000000000000(仮)」を使用した件数、在庫なしで除外した件数を含む)、
+「JAN: 0000000000000」を使用した件数、在庫なしで除外した件数、
+バリエーション軸3以上のため除外した件数を含む)、
 処理できなかった行を報告する。
 
 ## 絶対に守ること
