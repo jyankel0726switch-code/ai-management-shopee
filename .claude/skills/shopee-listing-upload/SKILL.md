@@ -307,6 +307,20 @@ Amazon商品ページの説明文・レビュー文をそのまま転記・要�
 - 一部の画像URLのみ取得に失敗した場合は、失敗した分を除いた成功分のみを
   ページ上の表示順を保ったまま詰めて(1枚目から欠番なく)Cover image・Item Image欄に
   反映し、要確認フラグを立ててその旨をレポートに記載する。
+  
+### Cover image のフレーム加工（自動化）
+
+これまでCanvaで手作業していた「黄色枠＋ピンク十字模様＋Direct From JAPANバナー」の加工を自動化する。
+
+1. Amazonから取得したCover画像（U列に入れる予定の画像）をダウンロードする。
+2. `scripts/add_shopee_frame.py` の `add_frame(input_path, output_path)` を実行し、フレーム加工済み画像を生成する。
+   - バナー文言はデフォルトの "Direct From JAPAN" を使用する。
+   - 出力ファイル名は `framed-images/{ASIN}_cover.jpg` とする。
+3. 加工済み画像をGitHubリポジトリ ai-management-shopee の `framed-images/` フォルダにコミット・pushする。
+4. push後、以下の形式のURLをCover image（U列）に入力する。
+   `https://raw.githubusercontent.com/jyankel0726switch-code/ai-management-shopee/main/framed-images/{ASIN}_cover.jpg`
+5. Item Image 1〜8（V〜AC列）は従来通りAmazon画像のURLをそのまま使用し、フレーム加工は行わない。
+6. フレーム加工・pushに失敗した場合は、Cover imageを空欄にせず元のAmazon画像URLをそのまま使用し、「要確認：フレーム加工失敗」フラグを立てる。
 
 ### 5.5 在庫数の設定
 Amazon商品ページに「残り○点」「在庫わずか」等の具体的な残数表示がある場合、その数値を
