@@ -1,94 +1,116 @@
 """
 add_shopee_frame.py
 
-これまでCanvaで手作業していた「黄色の枠＋ピンクの十字模様＋
-'Direct From JAPAN'バナー」のフレーム加工を自動化するスクリプト。
+Shopee出品用Cover画像に「黄色枠＋ピンク十字模様＋Direct From JAPANバナー」を
+自動で加工するスクリプト（従来Canvaで手作業していた加工の自動化版）。
 
 使い方:
-    python add_shopee_frame.py 入力画像.jpg 出力画像.jpg
-    python add_shopee_frame.py 入力画像.jpg 出力画像.jpg --text "Direct From JAPAN"
-
-shopee-listing-uploadスキルに組み込む場合:
     from add_shopee_frame import add_frame
-    add_frame("amazon_cover_downloaded.jpg", f"framed-images/{asin}_cover.jpg")
+    add_frame("input.jpg", "output.jpg")
+    add_frame("input.jpg", "output.jpg", banner_text="Direct From JAPAN")
+
+依存:
+    pip install pillow
 """
 
-import argparse
 from PIL import Image, ImageDraw, ImageFont
+import math
+import os
 
-# ---- サンプル画像から実測した比率（1080x1080基準） ----
-BORDER_COLOR = (255, 228, 148)   # #FFE494 黄色い枠
-CROSS_COLOR = (255, 173, 244)    # #FFADF4 ピンクの十字
-TEXT_COLOR = (255, 83, 125)      # #FF537D バナー文字
-
-# 枠の太さ（画像幅に対する比率。1080px基準で 左右46px・上74px・下55px）
-LEFT_RATIO = 46 / 1080
-RIGHT_RATIO = 45 / 1080
-TOP_RATIO = 74 / 1080
-BOTTOM_RATIO = 55 / 1080
-
-# 十字パターン（右側の枠内、上から約20%の高さまで繰り返し）
-CROSS_SPACING_RATIO = 32 / 1080      # 十字の縦の間隔
-CROSS_ARM_RATIO = 11 / 1080          # 十字の腕の半径
-CROSS_THICKNESS_RATIO = 4 / 1080     # 十字の線の太さ
-CROSS_ZONE_HEIGHT_RATIO = 213 / 1080  # 十字模様が入る縦方向の範囲
-
-# バナー文字
-TEXT_LEFT_MARGIN_RATIO = 54 / 1080
-FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+# ---- デザイン設定（Canva手作業版の見た目に合わせて調整可能） ----
+CANVAS_SIZE = 1200          # 出力画像は正方形(Shopee推奨)
+BORDER_WIDTH = 60           # 黄色枠の太さ(px)
+BORDER_COLOR = (255, 200, 0)      # 黄色
+CROSS_COLOR = (255, 105, 180, 110)  # ピンク十字模様(半透明)
+CROSS_SPACING = 70          # 十字模様の間隔(px)
+CROSS_SIZE = 14             # 十字1つのサイズ(px)
+CROSS_THICKNESS = 4
+BANNER_HEIGHT = 90
+BANNER_BG = (220, 20, 60)   # バナー背景(クリムゾン)
+BANNER_TEXT_COLOR = (255, 255, 255)
 
 
-def _draw_cross(draw, cx, cy, arm, thickness, color):
-    draw.line([(cx - arm, cy), (cx + arm, cy)], fill=color, width=thickness)
-    draw.line([(cx, cy - arm), (cx, cy + arm)], fill=color, width=thickness)
-
-
-def add_frame(input_path: str, output_path: str, text: str = "Direct From JAPAN") -> None:
-    photo = Image.open(input_path).convert("RGB")
-    w, h = photo.size
-
-    left = round(w * LEFT_RATIO)
-    right = round(w * RIGHT_RATIO)
-    top = round(w * TOP_RATIO)
-    bottom = round(w * BOTTOM_RATIO)
-
-    out_w, out_h = w + left + right, h + top + bottom
-    canvas = Image.new("RGB", (out_w, out_h), BORDER_COLOR)
-    canvas.paste(photo, (left, top))
-    draw = ImageDraw.Draw(canvas)
-
-    # --- 右側の十字模様（元画像の実測パターンを再現） ---
-    arm = max(3, round(w * CROSS_ARM_RATIO))
-    thickness = max(2, round(w * CROSS_THICKNESS_RATIO))
-    spacing = max(10, round(w * CROSS_SPACING_RATIO))
-    zone_height = round(w * CROSS_ZONE_HEIGHT_RATIO)
-
-    inner_x = out_w - right + round(right * 0.2)   # 枠の内側寄りの列
-    outer_x = out_w - round(right * 0.15)           # 枠の外側寄りの列
-    y = arm + 2
-    while y < zone_height:
-        _draw_cross(draw, inner_x, y, arm, thickness, CROSS_COLOR)
-        _draw_cross(draw, outer_x, y, arm, thickness, CROSS_COLOR)
+def _draw_cross_pattern(draw: ImageDraw.ImageDraw, box, spacing=CROSS_SPACING):
+    """box=(x0,y0,x1,y1) の範囲にピンクの十字模様を敷き詰める"""
+    x0, y0, x1, y1 = box
+    y = y0 + spacing // 2
+    row = 0
+    while y < y1:
+        offset = (spacing // 2) if row % 2 else 0
+        x = x0 + offset
+        while x < x1:
+            half = CROSS_SIZE // 2
+            draw.line([(x - half, y), (x + half, y)], fill=CROSS_COLOR, width=CROSS_THICKNESS)
+            draw.line([(x, y - half), (x, y + half)], fill=CROSS_COLOR, width=CROSS_THICKNESS)
+            x += spacing
         y += spacing
+        row += 1
 
-    # --- 上部バナー文字 ---
-    font_size = max(18, round(top * 0.52))
-    try:
-        font = ImageFont.truetype(FONT_PATH, font_size)
-    except OSError:
-        font = ImageFont.load_default()
-    text_x = round(w * TEXT_LEFT_MARGIN_RATIO)
-    text_y = round(top * 0.18)
-    draw.text((text_x, text_y), text, fill=TEXT_COLOR, font=font)
+
+def _load_font(size):
+    candidates = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+    ]
+    for path in candidates:
+        if os.path.exists(path):
+            return ImageFont.truetype(path, size)
+    return ImageFont.load_default()
+
+
+def add_frame(input_path: str, output_path: str, banner_text: str = "Direct From JAPAN"):
+    """
+    input_path の商品画像に黄色枠＋ピンク十字模様＋バナーを加工し、output_path に保存する。
+    """
+    base = Image.open(input_path).convert("RGB")
+
+    # 正方形キャンバスの中央に商品画像を配置(アスペクト比維持・余白は白)
+    inner = CANVAS_SIZE - 2 * BORDER_WIDTH
+    canvas = Image.new("RGB", (CANVAS_SIZE, CANVAS_SIZE), BORDER_COLOR)
+
+    photo_area = inner - BANNER_HEIGHT
+    ratio = min(inner / base.width, photo_area / base.height)
+    new_w, new_h = int(base.width * ratio), int(base.height * ratio)
+    resized = base.resize((new_w, new_h), Image.LANCZOS)
+
+    white_bg = Image.new("RGB", (inner, photo_area), (255, 255, 255))
+    paste_x = (inner - new_w) // 2
+    paste_y = (photo_area - new_h) // 2
+    white_bg.paste(resized, (paste_x, paste_y))
+    canvas.paste(white_bg, (BORDER_WIDTH, BORDER_WIDTH))
+
+    # ピンク十字模様を黄色枠の上に重ねる(半透明合成)
+    overlay = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
+    odraw = ImageDraw.Draw(overlay)
+    # 上枠・下枠・左枠・右枠それぞれに模様を敷く
+    _draw_cross_pattern(odraw, (0, 0, CANVAS_SIZE, BORDER_WIDTH))
+    _draw_cross_pattern(odraw, (0, CANVAS_SIZE - BORDER_WIDTH, CANVAS_SIZE, CANVAS_SIZE))
+    _draw_cross_pattern(odraw, (0, 0, BORDER_WIDTH, CANVAS_SIZE))
+    _draw_cross_pattern(odraw, (CANVAS_SIZE - BORDER_WIDTH, 0, CANVAS_SIZE, CANVAS_SIZE))
+    canvas = Image.alpha_composite(canvas.convert("RGBA"), overlay).convert("RGB")
+
+    # 下部に「Direct From JAPAN」バナー
+    draw = ImageDraw.Draw(canvas)
+    banner_y0 = BORDER_WIDTH + photo_area
+    banner_y1 = banner_y0 + BANNER_HEIGHT
+    draw.rectangle([BORDER_WIDTH, banner_y0, CANVAS_SIZE - BORDER_WIDTH, banner_y1], fill=BANNER_BG)
+
+    font = _load_font(40)
+    bbox = draw.textbbox((0, 0), banner_text, font=font)
+    tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+    tx = (CANVAS_SIZE - tw) // 2
+    ty = banner_y0 + (BANNER_HEIGHT - th) // 2 - bbox[1]
+    draw.text((tx, ty), banner_text, fill=BANNER_TEXT_COLOR, font=font)
 
     canvas.save(output_path, quality=92)
+    return output_path
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("input")
-    parser.add_argument("output")
-    parser.add_argument("--text", default="Direct From JAPAN")
-    args = parser.parse_args()
-    add_frame(args.input, args.output, args.text)
-    print(f"saved: {args.output}")
+    import sys
+    if len(sys.argv) < 3:
+        print("Usage: python add_shopee_frame.py <input> <output> [banner_text]")
+        sys.exit(1)
+    banner = sys.argv[3] if len(sys.argv) > 3 else "Direct From JAPAN"
+    add_frame(sys.argv[1], sys.argv[2], banner)
+    print(f"Saved: {sys.argv[2]}")
