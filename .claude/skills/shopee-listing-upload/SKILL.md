@@ -93,7 +93,7 @@ Shopeeは国ごとに配送チャネル列や価格倍率上限、商品名の�
 | 国 | 使用テンプレート | 主な違い |
 |---|---|---|
 | MY | `template/Shopee_mass_upload_template_MY.xlsx` | 配送チャネル列が「Doorstep Delivery - Japan」「SPX Express Lockers (Overseas)」の2列。価格倍率上限7倍(基本版は5倍)。商品名は10〜255文字 |
-| SG | `template/Shopee_mass_upload_template_SG.xlsx` | 配送チャネル列が4列(Doorstep Delivery (Overseas)/5-Day Delivery/Collection Points (Overseas)/SPX Express Lockers (Overseas))。商品名は10〜255文字。価格0.10〜999999.00(2026-09-09更新: 一度廃止されていた「5-Day Delivery」列がShopee側で復活したため、最新の公式テンプレートに差し替え済み。列がAH〜AKの4列に増え、Pre-order DTS/Fail Reasonが1列ずつ後ろにずれてAL/AMになっている点に注意) |
+| SG | `template/Shopee_mass_upload_template_SG.xlsx` | 配送チャネル列が3列(Doorstep Delivery/Collection Points/SPX Express Lockers)。商品名は10〜255文字。価格0.10〜999999.00(2026-08-20更新: 従来あった「5-Day Delivery」列がShopee側で廃止されたため、最新の公式テンプレートに差し替え済み) |
 | TH | `template/Shopee_mass_upload_template_TH.xlsx` | 配送チャネル列が「International Express (Japan)」の1列。商品名は20〜255文字。価格1〜500000 |
 | PH | `template/Shopee_mass_upload_template_PH.xlsx` | 配送チャネル列が「Standard International」の1列。商品名は20〜255文字。価格5〜100000 |
 | その他(VN/TW/BR) | `template/Shopee_mass_upload_basic_template.xlsx`(基本版) | 専用テンプレート未入手。入手次第追加する |
