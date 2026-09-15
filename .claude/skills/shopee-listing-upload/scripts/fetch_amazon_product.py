@@ -77,6 +77,9 @@ def _curl_get(url: str, user_agent: str = USER_AGENT) -> str:
     return subprocess.run(cmd, capture_output=True, text=True, timeout=60).stdout
 
 
+PRICE_SEARCH_WINDOW = 700000  # productTitle位置からこの範囲内のみ価格候補として認める
+
+
 def _extract_price_jpy(mobile_html: str) -> int | None:
     """モバイル版(iPhone UA)のページからJPY価格(円)を取得する。
 
@@ -85,8 +88,28 @@ def _extract_price_jpy(mobile_html: str) -> int | None:
     円建て価格が1つも見つからないことがある。一方モバイル版ページは同じ内容を
     `data-testid="price"`/`"price-text"`としてHTML内に(二重にHTMLエスケープされた
     形で)埋め込んでいるため、価格取得にはこちらを使う。
+
+    **重要**: ページ全体を無条件に検索してはならない。ページ下部の「よく一緒に
+    購入されている商品」等のレコメンドカルーセルにも同じ`data-testid="price"`が
+    使われており、そこには**全く別の商品**の価格が入っている
+    (2026-09-15判明: TANGLE TEEZERヘアブラシ(実売¥2,079)のページで、
+    レコメンド枠にあったSALONIAドライヤーの価格¥5,918を誤って商品価格として
+    採用してしまった。両者は商品名もカテゴリも無関係)。
+    そのため`#productTitle`(=対象商品自身のタイトル)の出現位置を基準に、
+    そこから`PRICE_SEARCH_WINDOW`文字以内に現れた価格のみを採用する
+    (実測: 正しい価格は数十万文字以内に現れ、誤って拾っていたカルーセル価格は
+    200万文字以上離れた位置にあった)。範囲外にしか価格が見つからない場合は、
+    誤った商品の価格を掴むよりはNoneを返して要確認フラグに倒す方が安全。
     """
-    m = PRICE_PATTERN.search(mobile_html)
+    title_pos = mobile_html.find('id="productTitle"')
+    if title_pos == -1:
+        title_pos = mobile_html.find("productTitle")
+    search_area = (
+        mobile_html[title_pos:title_pos + PRICE_SEARCH_WINDOW]
+        if title_pos != -1
+        else mobile_html[:PRICE_SEARCH_WINDOW]
+    )
+    m = PRICE_PATTERN.search(search_area)
     if not m:
         return None
     return int(m.group(1).replace(",", ""))
