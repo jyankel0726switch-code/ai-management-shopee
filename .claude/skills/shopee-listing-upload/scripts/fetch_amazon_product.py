@@ -54,6 +54,8 @@ DEFAULT_DIMENSIONS_BY_CATEGORY_KEYWORD = {
     "ファッション": {"weight": 0.3, "length": 25, "width": 20, "height": 8},
     "カーテン": {"weight": 0.5, "length": 150, "width": 150, "height": 5},
     "文房具": {"weight": 0.5, "length": 20, "width": 15, "height": 10},
+    "シール": {"weight": 0.02, "length": 15, "width": 11, "height": 1},
+    "タオル": {"weight": 0.12, "length": 20, "width": 15, "height": 3},
 }
 
 
@@ -402,13 +404,23 @@ def fetch_product(asin: str) -> dict:
 
 def default_dimensions_for(breadcrumbs: list[str]) -> dict | None:
     """商品ページに重量・サイズの記載が無い場合の最終フォールバック値を返す。
-    breadcrumbsのいずれかの階層名にキーワードが部分一致した最初の値を採用する。
+    breadcrumbsの階層名にキーワードが部分一致した値を採用する。
     一致しなければNoneを返す(呼び出し側で要確認フラグを立てた上で汎用値を使うこと)。
+
+    2026-09-15判明: 以前は`breadcrumbs`を1本の文字列に結合してから先頭一致の
+    キーワードを探していたため、末尾(より具体的)の階層名にキーワードが
+    あっても、先頭(より大まかな)階層名にたまたま含まれる無関係なキーワードが
+    先に一致してしまう不具合があった(例:「ホーム＆キッチン / バス・トイレ・
+    洗面用品 / タオル / フェイスタオル」で、末尾の「タオル」より先に先頭の
+    「ホーム＆キッチン」に含まれる「キッチン」が誤って一致し、台所用品の
+    仮値が採用されてしまっていた)。breadcrumbsは先頭ほど大分類・末尾ほど
+    具体的な小分類になっているため、末尾から順に1階層ずつキーワードを
+    探すことで、より具体的な階層名を優先する。
     """
-    joined = " / ".join(breadcrumbs)
-    for keyword, dims in DEFAULT_DIMENSIONS_BY_CATEGORY_KEYWORD.items():
-        if keyword in joined:
-            return dims
+    for segment in reversed(breadcrumbs):
+        for keyword, dims in DEFAULT_DIMENSIONS_BY_CATEGORY_KEYWORD.items():
+            if keyword in segment:
+                return dims
     return None
 
 
