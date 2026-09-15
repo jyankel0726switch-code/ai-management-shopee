@@ -72,26 +72,119 @@ def _base_image_id(url: str) -> str:
     return m.group(1) if m else url
 
 
+def _find_balanced_object(html: str, start: int) -> str:
+    """`start`が指す `{` から、対応する `}` までの中身(内側)を波括弧の深さを数えて
+    切り出す。`[^}]*`系の正規表現は`{`をスキップしないため、複数エントリを持つ
+    オブジェクト(例: バリエーションが3つ以上ある商品のcolorToAsin)を1エントリ目で
+    取りこぼす不具合があった(2026-09-15判明)。この関数はその代替。
+    """
+    assert html[start] == "{"
+    depth = 0
+    for i in range(start, len(html)):
+        if html[i] == "{":
+            depth += 1
+        elif html[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return html[start + 1:i]
+    return html[start + 1:]
+
+
+def _extract_color_to_asin(html: str) -> dict[str, str]:
+    """`"colorToAsin":{"色名":{"asin":"B0..."}, ...}` を色名→ASINの辞書で返す。"""
+    mapping: dict[str, str] = {}
+    m = re.search(r'"colorToAsin":\{', html)
+    if not m:
+        return mapping
+    body = _find_balanced_object(html, m.end() - 1)
+    for em in re.finditer(r'"([^"]+)":\{"asin":"([A-Z0-9]{10})"', body):
+        mapping[em.group(1)] = em.group(2)
+    return mapping
+
+
+def _top_level_array_entries(body: str) -> list[tuple[str, int, int]]:
+    """`body`(あるオブジェクトの中身)直下にある `"key":[ ... ]` 形式のエントリを、
+    ネストの深さを追跡しながら列挙する。(key, array_start, array_end)のリストを返す
+    (array_start/array_endは`[`と`]`のインデックス、endは`]`の次の位置)。
+
+    単純な正規表現`"([^"]+)":\\[`だと、配列の中に入れ子で現れる別の`"key":[...]`
+    (例: 画像サイズ別URLのマップ`"main":{"https://...jpg":["569","569"]}`)にも
+    誤ってマッチしてしまい、本来1つの色に属する画像リストが途中で分断される
+    不具合があった(2026-09-15判明)。ここでは深さ0の位置に現れるキーだけを対象にする。
+    """
+    entries: list[tuple[str, int, int]] = []
+    depth = 0
+    i = 0
+    n = len(body)
+    key_pattern = re.compile(r'"([^"]*)"\s*:\s*\[')
+    while i < n:
+        ch = body[i]
+        if depth == 0:
+            m = key_pattern.match(body, i)
+            if m:
+                array_start = m.end() - 1  # index of the '['
+                array_end = _find_matching_bracket(body, array_start)
+                entries.append((m.group(1), array_start, array_end))
+                i = array_end
+                depth = 0
+                continue
+        if ch in "{[":
+            depth += 1
+        elif ch in "}]":
+            depth -= 1
+        i += 1
+    return entries
+
+
+def _find_matching_bracket(s: str, start: int) -> int:
+    """s[start]が'['である前提で、対応する']'の次の位置を返す。"""
+    assert s[start] == "["
+    depth = 0
+    for i in range(start, len(s)):
+        if s[i] in "{[":
+            depth += 1
+        elif s[i] in "}]":
+            depth -= 1
+            if depth == 0:
+                return i + 1
+    return len(s)
+
+
+def _extract_color_images(html: str) -> dict[str, list[str]]:
+    """`"colorImages":{"色名":[{...,"hiRes":"URL"}, ...], ...}` を
+    色名→hiRes画像URLのリストの辞書で返す。バリエーション商品では色ごとに
+    別々の画像セットを持つため、色を横断して1つのリストにまとめて返す
+    (`_extract_images`の旧実装)とバリエーション違いの写真が混ざってしまう
+    (2026-09-15判明: 3色バリエーション商品で、実際には別の色の写真を
+    Item Imageに書いてしまっていた)。
+    """
+    result: dict[str, list[str]] = {}
+    m = re.search(r'"colorImages":\{', html)
+    if not m:
+        return result
+    body = _find_balanced_object(html, m.end() - 1)
+    for color, array_start, array_end in _top_level_array_entries(body):
+        segment = body[array_start:array_end]
+        urls = [hm.group(1) for hm in re.finditer(r'"hiRes":"(https:[^"]+\.jpg)"', segment)]
+        if not urls:
+            urls = [hm.group(1) for hm in re.finditer(r'"large":"(https:[^"]+\.jpg)"', segment)]
+        result[color] = urls
+    return result
+
+
 def _extract_images(html: str, asin: str) -> list[str]:
     images: list[str] = []
 
-    # パターン(a): "colorToAsin":{"色名":{"asin":"B0..."}} の近傍にある "colorImages" ブロック
-    for cm in re.finditer(r'"colorToAsin":\{([^}]*(?:\{[^}]*\}[^}]*)*)\}', html):
-        if asin not in cm.group(1):
-            continue
-        ci_start = html.find('"colorImages"', max(0, cm.start() - 40000), cm.start())
-        if ci_start == -1:
-            ci_start = html.find('"colorImages"', cm.end(), cm.end() + 40000)
-        if ci_start != -1:
-            segment = html[ci_start:ci_start + 40000]
-            for hm in re.finditer(r'"hiRes":"(https:[^"]+\.jpg)"', segment):
-                if hm.group(1) not in images:
-                    images.append(hm.group(1))
-            if not images:
-                for hm in re.finditer(r'"large":"(https:[^"]+\.jpg)"', segment):
-                    if hm.group(1) not in images:
-                        images.append(hm.group(1))
-        break
+    # パターン(a): バリエーション商品。現在表示中のASIN自身の色(landingAsinColor)に
+    # 対応する画像セットのみを使う(色をまたいで混在させない)。
+    color_images = _extract_color_images(html)
+    if color_images:
+        lm = re.search(r'"landingAsinColor":"([^"]+)"', html)
+        own_color = lm.group(1) if lm else None
+        if own_color and own_color in color_images:
+            images = list(color_images[own_color])
+        elif len(color_images) == 1:
+            images = list(next(iter(color_images.values())))
 
     # パターン(b): 'colorImages': { 'initial': A.$.parseJSON('[...]') } (バリエーションなし商品)
     if not images:
@@ -164,6 +257,11 @@ def fetch_product(asin: str) -> dict:
     result["availability"] = _extract_availability(html)
     result["images"] = _extract_images(html, asin)
     result["breadcrumbs"] = [a.get_text(strip=True) for a in soup.select("#wayfinding-breadcrumbs_feature_div a")]
+    # 他の選択肢(色/柄等)のASIN一覧。現在表示中のASIN自身は含まれないことがある
+    # (`landingAsinColor`が現在の値)。バリエーションのクロスチェックに使う。
+    result["sibling_asins"] = _extract_color_to_asin(html)
+    lm = re.search(r'"landingAsinColor":"([^"]+)"', html)
+    result["own_variation_value"] = lm.group(1) if lm else None
 
     details: dict[str, str] = {}
     for row in soup.select("#productDetails_detailBullets_sections1 tr, #productDetails_techSpec_section_1 tr, .prodDetTable tr"):
