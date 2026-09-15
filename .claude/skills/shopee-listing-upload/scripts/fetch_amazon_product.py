@@ -81,26 +81,55 @@ PRICE_SEARCH_WINDOW = 700000  # productTitle位置からこの範囲内のみ価
 YEN_FALLBACK_WINDOW = 15000   # 「￥X,XXX」フォールバックはタイトルのごく近くのみ許可
 
 
-def _extract_price_jpy(mobile_html: str) -> int | None:
-    """モバイル版(iPhone UA)のページからJPY価格(円)を取得する。
+def _extract_price_from_buybox(desktop_html: str, asin: str) -> dict:
+    """デスクトップ版ページの、対象ASINに紐づくことが明示された購入フォーム
+    (`data-csa-c-asin="{asin}"`を持つ`qualifiedBuybox`ウィジェット内の
+    `items[0.base][customerVisiblePrice]`隠しフィールド)から価格を取得する。
 
-    デスクトップ版ページ(`_curl_get`のデフォルトUA)は、この価格ウィジェットが
-    サーバー側HTMLに含まれず(クライアント側JSでのみ描画される)商品が多く、
-    円建て価格が1つも見つからないことがある。一方モバイル版ページは同じ内容を
-    `data-testid="price"`/`"price-text"`としてHTML内に(二重にHTMLエスケープされた
-    形で)埋め込んでいるため、価格取得にはこちらを使う。
+    2026-09-15追加。それまでの実装(`data-testid="price"`の全文検索、
+    のちに#productTitleからの距離で絞り込み)は、同じ`data-testid`が
+    レコメンド/タイムセールのカルーセルにも使われているため、2回にわたって
+    **全く無関係な別商品の価格**を誤って採用する事故を起こした
+    (SALONIAドライヤーの価格、タイムセール商品の価格をそれぞれ誤取得。
+    いずれもユーザーが実際のAmazon画面のスクリーンショットで指摘して発覚)。
 
-    **重要**: ページ全体を無条件に検索してはならない。ページ下部の「よく一緒に
-    購入されている商品」等のレコメンドカルーセルにも同じ`data-testid="price"`が
-    使われており、そこには**全く別の商品**の価格が入っている
-    (2026-09-15判明: TANGLE TEEZERヘアブラシ(実売¥2,079)のページで、
-    レコメンド枠にあったSALONIAドライヤーの価格¥5,918を誤って商品価格として
-    採用してしまった。両者は商品名もカテゴリも無関係)。
-    そのため`#productTitle`(=対象商品自身のタイトル)の出現位置を基準に、
-    そこから`PRICE_SEARCH_WINDOW`文字以内に現れた価格のみを採用する
-    (実測: 正しい価格は数十万文字以内に現れ、誤って拾っていたカルーセル価格は
-    200万文字以上離れた位置にあった)。範囲外にしか価格が見つからない場合は、
-    誤った商品の価格を掴むよりはNoneを返して要確認フラグに倒す方が安全。
+    この関数が使う`data-csa-c-asin="{asin}"`は、Amazon側がその購入フォームが
+    *まさにこのASINのもの*であることを明示するために付与している属性であり、
+    プロキシ的な位置関係ではなく構造的な裏付けがある。またこの過程で、
+    本セッションのAmazonアクセスが地域誤判定を起こしている場合、この購入
+    フォームの通貨が`JPY`ではなく`USD`等になっていることも合わせて検出できる
+    (2026-09-15判明: セッション全体で複数商品が同時にUSD表示になっていた回が
+    あった)。
+
+    戻り値: {"price_jpy": int|None, "currency": str|None, "region_mismatch": bool}
+    """
+    result = {"price_jpy": None, "currency": None, "region_mismatch": False}
+    marker = f'data-csa-c-asin="{asin}"'
+    i = desktop_html.find(marker)
+    if i == -1:
+        return result
+    segment = desktop_html[i:i + 4000]
+    cm = re.search(r'customerVisiblePrice\]\[currencyCode\]"\s*value="([^"]+)"', segment)
+    am = re.search(r'customerVisiblePrice\]\[amount\]"\s*value="([^"]+)"', segment)
+    if not cm or not am:
+        return result
+    currency = cm.group(1)
+    result["currency"] = currency
+    try:
+        amount = float(am.group(1))
+    except ValueError:
+        return result
+    if currency == "JPY":
+        result["price_jpy"] = int(round(amount))
+    else:
+        result["region_mismatch"] = True
+    return result
+
+
+def _extract_price_jpy_legacy(mobile_html: str) -> int | None:
+    """`_extract_price_from_buybox`でASIN紐付きの価格が見つからない場合の
+    フォールバック(旧実装)。位置的な絞り込みしかできないため、
+    `_extract_price_from_buybox`より信頼度が低い(上記docstring参照)。
     """
     title_pos = mobile_html.find('id="productTitle"')
     if title_pos == -1:
@@ -114,12 +143,6 @@ def _extract_price_jpy(mobile_html: str) -> int | None:
     if m:
         return int(m.group(1).replace(",", ""))
 
-    # フォールバック: data-testid="price"形式を使わないページ向けに、
-    # タイトルのごく近く(±YEN_FALLBACK_WINDOW文字)に現れる「￥X,XXX」表記を拾う。
-    # メインの価格ウィジェットより構造的な目印が弱いため、誤検出を避けるために
-    # data-testid方式よりずっと狭い範囲に限定する(2026-09-15追加: 保冷剤商品の
-    # ページで確認。price-text系のマークアップが存在せず、単純な「￥6,998」表記が
-    # タイトルの直前・直後にのみ出現していた)。
     if title_pos != -1:
         yen_area_start = max(0, title_pos - YEN_FALLBACK_WINDOW)
         yen_area = mobile_html[yen_area_start:title_pos + YEN_FALLBACK_WINDOW]
@@ -334,8 +357,18 @@ def fetch_product(asin: str) -> dict:
     lm = re.search(r'"landingAsinColor":"([^"]+)"', html)
     result["own_variation_value"] = lm.group(1) if lm else None
 
-    mobile_html = _curl_get(url, user_agent=MOBILE_USER_AGENT)
-    result["price_jpy"] = _extract_price_jpy(mobile_html)
+    buybox = _extract_price_from_buybox(html, asin)
+    result["price_jpy"] = buybox["price_jpy"]
+    result["price_currency"] = buybox["currency"]
+    result["price_region_mismatch"] = buybox["region_mismatch"]
+    if result["price_jpy"] is None and not buybox["region_mismatch"]:
+        # ASIN紐付きの購入フォームが見つからなかった場合のみ、信頼度の低い
+        # 旧方式(位置的な絞り込み)にフォールバックする。region_mismatchが
+        # 真の場合(USD等で表示されていた場合)はフォールバックしない: 誤った
+        # 通貨の商品ページ全体が地域誤判定を起こしている可能性が高く、
+        # 旧方式で見つかる価格も同様に信用できないため。
+        mobile_html = _curl_get(url, user_agent=MOBILE_USER_AGENT)
+        result["price_jpy"] = _extract_price_jpy_legacy(mobile_html)
 
     details: dict[str, str] = {}
     for row in soup.select("#productDetails_detailBullets_sections1 tr, #productDetails_techSpec_section_1 tr, .prodDetTable tr"):
