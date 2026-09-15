@@ -139,7 +139,7 @@ Shopeeへの登録に失敗した。** 各テンプレートの`Upload sample`�
 | J | Variation Integration No. | Conditional Mandatory | バリエーションなし商品は空欄。ある場合は同一商品グループの全行に共通の連番を入れる |
 | K | Variation Name1 | Conditional Mandatory | バリエーションなし商品は空欄。ある場合は1軸目の軸名(例:色) |
 | L | Option for Variation 1 | Conditional Mandatory | バリエーションなし商品は空欄。ある場合は1軸目の値(例:ブラック) |
-| M | Image per Variation | Conditional Mandatory | バリエーションごとに画像が異なる場合に設定。取得できなければ空欄 |
+| M | Image per Variation | Conditional Mandatory | バリエーションがある商品では**必ず**そのバリエーション行のCover image(U列)と同じURLを入れる(Shopeeの出品編集画面で各バリエーションの選択肢に表示されるサムネイルに使われる列。2026-09-15判明: この列を空欄のままにしていたところ、バリエーション選択UIで各色の画像が表示されない状態になっていた)。バリエーションがない商品は空欄でよい |
 | N | Variation Name2 | Conditional Mandatory | 軸が1つ以下の商品は空欄。2軸目がある場合のみ軸名(例:サイズ) |
 | O | Option for Variation 2 | Conditional Mandatory | 同上。2軸目の値(例:Mサイズ) |
 | P | Price | Mandatory | 3で算出 |
@@ -212,6 +212,9 @@ Onにする(過去の国別テンプレートでの運用にならい、配送�
    - Variation Name1 / Option for Variation 1:1軸目(例:色/ブラック)
    - Variation Name2 / Option for Variation 2:2軸目がある場合のみ(例:サイズ/Mサイズ)
    - Variation Integration No.:同一商品グループの全行に共通の連番を付与
+   - Image per Variation(M列):**必ず**そのバリエーション行のCover image(U列)と同じURLを入れる
+     (空欄のままだとShopeeの出品編集画面のバリエーション選択UIに画像が表示されない。
+     2026-09-15判明)
    - 価格・在庫・重量・画像はバリエーションごとに個別取得を試み、取得できない項目は親情報を流用
 3. **軸が3つ以上**の場合:この商品は自動処理の対象外とし、「要確認:バリエーション軸3以上」のフラグを立ててレポートに記載するのみとし、出品ファイルは生成しない。
 4. 1.のクロスチェックを行っても選択肢の対応関係が曖昧なままだった場合(「要確認:
