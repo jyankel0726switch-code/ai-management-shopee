@@ -230,7 +230,15 @@ Onにする(過去の国別テンプレートでの運用にならい、配送�
 2. **軸が1〜2つ**の場合:バリエーション出品として処理する。
    - Parent SKU:親となるASIN(代表ASIN)
    - SKU:各バリエーションに個別のASINがあればそのASINをそのまま使用。個別ASINが取得できないバリエーション(同一ASIN内の選択肢のみの場合等)は`{親ASIN}-01`のような枝番で代替
-   - Variation Name1 / Option for Variation 1:1軸目(例:色/ブラック)
+   - Variation Name1 / Option for Variation 1:1軸目(例:色/ブラック)。
+     **軸名(Variation Name1/2)は自由な独自表現を作らず、`Color`/`Size`/`Style`/
+     `Pattern`/`Quantity`等、他の商品グループで実際にShopee側の検証を通過した
+     汎用的な軸名を使い回すこと**(2026-09-15判明: 数量違いのバリエーションに
+     独自の軸名`Pack Size`を使ったところ、Shopeeの結果ファイルで該当商品のみ
+     「Variation name should be consistent」エラーになった。同じ構造で軸名を
+     `Quantity`にした別商品はエラーにならなかったため、軸名自体がカテゴリ側の
+     許容リストにない独自表現だったことが原因と判明。個数・入り数のバリエーションは
+     `Pack Size`ではなく`Quantity`を使うこと)
    - Variation Name2 / Option for Variation 2:2軸目がある場合のみ(例:サイズ/Mサイズ)
    - Variation Integration No.:同一商品グループの全行に共通の連番を付与
    - Image per Variation(M列):**必ず**そのバリエーションの画像URLを入れる(空欄のままだと
