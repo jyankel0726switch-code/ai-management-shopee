@@ -198,31 +198,40 @@ def _extract_color_images(html: str) -> dict[str, list[str]]:
 
 
 def _extract_images(html: str, asin: str) -> list[str]:
-    images: list[str] = []
-
-    # パターン(a): バリエーション商品。現在表示中のASIN自身の色(landingAsinColor)に
-    # 対応する画像セットのみを使う(色をまたいで混在させない)。
+    # パターン(a): "colorImages":{"色名":[...]}の、現在表示中のASIN自身の色
+    # (landingAsinColor)に対応する画像セット(色をまたいで混在させない)。
+    # このJSONは色ごとに1枚(スウォッチ代表カット)しか持たないことがある。
     color_images = _extract_color_images(html)
-    if color_images:
-        lm = re.search(r'"landingAsinColor":"([^"]+)"', html)
-        own_color = lm.group(1) if lm else None
-        if own_color and own_color in color_images:
-            images = list(color_images[own_color])
-        elif len(color_images) == 1:
-            images = list(next(iter(color_images.values())))
+    own_color = None
+    lm = re.search(r'"landingAsinColor":"([^"]+)"', html)
+    if lm:
+        own_color = lm.group(1)
+    images_a: list[str] = []
+    if own_color and own_color in color_images:
+        images_a = list(color_images[own_color])
+    elif len(color_images) == 1:
+        images_a = list(next(iter(color_images.values())))
 
-    # パターン(b): 'colorImages': { 'initial': A.$.parseJSON('[...]') } (バリエーションなし商品)
-    if not images:
-        m = re.search(r"'colorImages':\s*\{\s*'initial':\s*A\.\$\.parseJSON\('(\[.*?\])'\)", html, re.S)
-        if m:
-            try:
-                arr = json.loads(m.group(1))
-                for item in arr:
-                    hires = item.get("hiRes") or item.get("large")
-                    if hires and hires not in images:
-                        images.append(hires)
-            except Exception:
-                pass
+    # パターン(b): 'colorImages': { 'initial': A.$.parseJSON('[...]') }
+    # ページの初期表示(=現在のASIN/色)についての、メイン+複数アングル
+    # (MAIN/PT01/PT02...)を含むフルセット。パターン(a)が1枚しか持たない
+    # 商品でも、こちらには同じ色の別アングル写真が入っていることがある
+    # (2026-09-15判明: 3色バリエーション商品で、パターン(a)が各色1枚しか
+    # 返さないためパターン(b)を一切試さず、結果的に2〜3枚しか取得できて
+    # いなかった)。したがって両方を試し、より多く取得できた方を採用する。
+    images_b: list[str] = []
+    m = re.search(r"'colorImages':\s*\{\s*'initial':\s*A\.\$\.parseJSON\('(\[.*?\])'\)", html, re.S)
+    if m:
+        try:
+            arr = json.loads(m.group(1))
+            for item in arr:
+                hires = item.get("hiRes") or item.get("large")
+                if hires and hires not in images_b:
+                    images_b.append(hires)
+        except Exception:
+            pass
+
+    images = images_b if len(images_b) >= len(images_a) else images_a
 
     # 重複排除(画像ID単位。同じ写真の解像度違いを別画像として数えない)
     seen: dict[str, str] = {}
