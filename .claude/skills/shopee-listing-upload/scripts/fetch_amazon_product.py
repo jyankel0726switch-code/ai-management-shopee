@@ -57,14 +57,39 @@ DEFAULT_DIMENSIONS_BY_CATEGORY_KEYWORD = {
 }
 
 
-def _curl_get(url: str) -> str:
+MOBILE_USER_AGENT = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
+
+# 現在価格を示すdata-testid="price"直後の、取り消し線なしのdata-testid="price-text"を
+# 拾う(fullprice側は取り消し線付きの旧価格なので除外される)。
+PRICE_PATTERN = re.compile(
+    r'data-testid=\\&quot;price\\&quot;[\s\S]{0,400}?'
+    r'data-testid=\\&quot;price-text\\&quot;[\s\S]{0,300}?&gt;([\d,]+)&lt;'
+)
+
+
+def _curl_get(url: str, user_agent: str = USER_AGENT) -> str:
     cmd = [
         "curl", "-sS", "-L",
-        "-A", USER_AGENT,
+        "-A", user_agent,
         "-H", "Accept-Language: ja-JP,ja;q=0.9",
         url,
     ]
     return subprocess.run(cmd, capture_output=True, text=True, timeout=60).stdout
+
+
+def _extract_price_jpy(mobile_html: str) -> int | None:
+    """モバイル版(iPhone UA)のページからJPY価格(円)を取得する。
+
+    デスクトップ版ページ(`_curl_get`のデフォルトUA)は、この価格ウィジェットが
+    サーバー側HTMLに含まれず(クライアント側JSでのみ描画される)商品が多く、
+    円建て価格が1つも見つからないことがある。一方モバイル版ページは同じ内容を
+    `data-testid="price"`/`"price-text"`としてHTML内に(二重にHTMLエスケープされた
+    形で)埋め込んでいるため、価格取得にはこちらを使う。
+    """
+    m = PRICE_PATTERN.search(mobile_html)
+    if not m:
+        return None
+    return int(m.group(1).replace(",", ""))
 
 
 def _base_image_id(url: str) -> str:
@@ -262,6 +287,9 @@ def fetch_product(asin: str) -> dict:
     result["sibling_asins"] = _extract_color_to_asin(html)
     lm = re.search(r'"landingAsinColor":"([^"]+)"', html)
     result["own_variation_value"] = lm.group(1) if lm else None
+
+    mobile_html = _curl_get(url, user_agent=MOBILE_USER_AGENT)
+    result["price_jpy"] = _extract_price_jpy(mobile_html)
 
     details: dict[str, str] = {}
     for row in soup.select("#productDetails_detailBullets_sections1 tr, #productDetails_techSpec_section_1 tr, .prodDetTable tr"):
