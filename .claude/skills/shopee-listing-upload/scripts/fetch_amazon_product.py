@@ -82,6 +82,22 @@ def _curl_get(url: str, user_agent: str = USER_AGENT) -> str:
 PRICE_SEARCH_WINDOW = 700000  # productTitle位置からこの範囲内のみ価格候補として認める
 YEN_FALLBACK_WINDOW = 15000   # 「￥X,XXX」フォールバックはタイトルのごく近くのみ許可
 
+# 地域誤判定時にUSD表示された価格からJPY推定値を逆算するためのレート。
+# 2026-09-15、本セッションで同時に地域誤判定していた3商品(実際のJPY価格を
+# ユーザーがAmazon画面で確認済み)について、表示されたUSD金額から逆算した
+# implied rateがいずれも153.37423312883436(小数点以下まで完全一致)だった
+# ことから採用。この値はAmazonが内部的に使っている当日のUSD/JPY換算レートの
+# 実測値であり、恣意的な仮値ではない(このセッションの実行環境からは、
+# 外部の為替APIへの直接アクセスがネットワークポリシーでブロックされている
+# ため、この逆算が唯一の実測手段)。
+# 為替レートは日々変動するため、このレートを使って算出した価格はあくまで
+# **推定値**として扱い、人による確認なしに確定価格として採用しないこと
+# (別の商品では約1%のズレが見られたが、これはレート誤差ではなく実際の
+# JPY価格自体が変動した可能性が高いと判断した。差異が大きい場合は
+# このレート自体の再検証が必要)。新しい既知価格ペアが得られた場合は、
+# このレートを再calibrationして更新すること。
+USD_JPY_RATE = 153.374233
+
 
 def _extract_price_from_buybox(desktop_html: str, asin: str) -> dict:
     """デスクトップ版ページの、対象ASINに紐づくことが明示された購入フォーム
@@ -103,9 +119,14 @@ def _extract_price_from_buybox(desktop_html: str, asin: str) -> dict:
     (2026-09-15判明: セッション全体で複数商品が同時にUSD表示になっていた回が
     あった)。
 
-    戻り値: {"price_jpy": int|None, "currency": str|None, "region_mismatch": bool}
+    地域誤判定時、通貨がUSDの場合は`price_jpy_estimated`にJPY推定値も返す
+    (`USD_JPY_RATE`参照。あくまで推定であり、`price_jpy`(確定値)には入れない
+    ので、呼び出し側は必ず人に確認を仰いだ上で採用すること)。
+
+    戻り値: {"price_jpy": int|None, "currency": str|None, "region_mismatch": bool,
+             "price_jpy_estimated": int|None}
     """
-    result = {"price_jpy": None, "currency": None, "region_mismatch": False}
+    result = {"price_jpy": None, "currency": None, "region_mismatch": False, "price_jpy_estimated": None}
     marker = f'data-csa-c-asin="{asin}"'
     i = desktop_html.find(marker)
     if i == -1:
@@ -139,6 +160,8 @@ def _extract_price_from_buybox(desktop_html: str, asin: str) -> dict:
         result["price_jpy"] = int(round(amount))
     else:
         result["region_mismatch"] = True
+        if currency == "USD":
+            result["price_jpy_estimated"] = int(round(amount * USD_JPY_RATE))
     return result
 
 
@@ -377,6 +400,7 @@ def fetch_product(asin: str) -> dict:
     result["price_jpy"] = buybox["price_jpy"]
     result["price_currency"] = buybox["currency"]
     result["price_region_mismatch"] = buybox["region_mismatch"]
+    result["price_jpy_estimated"] = buybox["price_jpy_estimated"]
     if result["price_jpy"] is None and not buybox["region_mismatch"]:
         # ASIN紐付きの購入フォームが見つからなかった場合のみ、信頼度の低い
         # 旧方式(位置的な絞り込み)にフォールバックする。region_mismatchが
