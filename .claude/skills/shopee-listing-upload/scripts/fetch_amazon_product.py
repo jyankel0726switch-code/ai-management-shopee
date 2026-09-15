@@ -78,6 +78,7 @@ def _curl_get(url: str, user_agent: str = USER_AGENT) -> str:
 
 
 PRICE_SEARCH_WINDOW = 700000  # productTitle位置からこの範囲内のみ価格候補として認める
+YEN_FALLBACK_WINDOW = 15000   # 「￥X,XXX」フォールバックはタイトルのごく近くのみ許可
 
 
 def _extract_price_jpy(mobile_html: str) -> int | None:
@@ -110,9 +111,22 @@ def _extract_price_jpy(mobile_html: str) -> int | None:
         else mobile_html[:PRICE_SEARCH_WINDOW]
     )
     m = PRICE_PATTERN.search(search_area)
-    if not m:
-        return None
-    return int(m.group(1).replace(",", ""))
+    if m:
+        return int(m.group(1).replace(",", ""))
+
+    # フォールバック: data-testid="price"形式を使わないページ向けに、
+    # タイトルのごく近く(±YEN_FALLBACK_WINDOW文字)に現れる「￥X,XXX」表記を拾う。
+    # メインの価格ウィジェットより構造的な目印が弱いため、誤検出を避けるために
+    # data-testid方式よりずっと狭い範囲に限定する(2026-09-15追加: 保冷剤商品の
+    # ページで確認。price-text系のマークアップが存在せず、単純な「￥6,998」表記が
+    # タイトルの直前・直後にのみ出現していた)。
+    if title_pos != -1:
+        yen_area_start = max(0, title_pos - YEN_FALLBACK_WINDOW)
+        yen_area = mobile_html[yen_area_start:title_pos + YEN_FALLBACK_WINDOW]
+        ym = re.search(r"[￥¥]([\d,]+)", yen_area)
+        if ym:
+            return int(ym.group(1).replace(",", ""))
+    return None
 
 
 def _base_image_id(url: str) -> str:
