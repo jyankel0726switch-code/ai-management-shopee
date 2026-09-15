@@ -230,15 +230,22 @@ Onにする(過去の国別テンプレートでの運用にならい、配送�
 2. **軸が1〜2つ**の場合:バリエーション出品として処理する。
    - Parent SKU:親となるASIN(代表ASIN)
    - SKU:各バリエーションに個別のASINがあればそのASINをそのまま使用。個別ASINが取得できないバリエーション(同一ASIN内の選択肢のみの場合等)は`{親ASIN}-01`のような枝番で代替
-   - Variation Name1 / Option for Variation 1:1軸目(例:色/ブラック)。
-     **軸名(Variation Name1/2)は自由な独自表現を作らず、`Color`/`Size`/`Style`/
-     `Pattern`/`Quantity`等、他の商品グループで実際にShopee側の検証を通過した
-     汎用的な軸名を使い回すこと**(2026-09-15判明: 数量違いのバリエーションに
-     独自の軸名`Pack Size`を使ったところ、Shopeeの結果ファイルで該当商品のみ
-     「Variation name should be consistent」エラーになった。同じ構造で軸名を
-     `Quantity`にした別商品はエラーにならなかったため、軸名自体がカテゴリ側の
-     許容リストにない独自表現だったことが原因と判明。個数・入り数のバリエーションは
-     `Pack Size`ではなく`Quantity`を使うこと)
+   - Variation Name1 / Option for Variation 1:1軸目(例:色/ブラック)
+   - **Food & Beverages配下のカテゴリ(例:101592 Seasonings & Condiments/Others)は
+     バリエーション機能自体に対応していない可能性がある(2026-09-15判明)。
+     数量違い(パック数等)のバリエーションに軸名`Pack Size`を使ったところ、Shopeeの
+     結果ファイルでそのグループのみ「Variation name should be consistent」エラーに
+     なった。軸名を`Quantity`(他の非食品カテゴリの商品グループで実際に検証を通過
+     済みの汎用軸名)に変更して再アップロードしても、同じFood & Beveragesカテゴリの
+     グループだけ同一エラーが再発し、他の列(Category/Weight/Length/Width/Height/
+     配送チャネル等)を1つずつ突き合わせても2行間に相違は見つからなかった。
+     これは軸名の文字列自体の問題ではなく、このカテゴリ(またはFood & Beverages
+     大分類全体)がバリエーション機能を受け付けないことが原因である可能性が高い。
+     このため、**Food & Beverages配下のカテゴリでパック数・内容量等の違いがある
+     商品は、Shopeeのバリエーション機能を使わず、それぞれ独立したSKU(独立した
+     Parent SKU・単独商品)として別々の行に出品すること**。ここで得られた教訓は
+     食品カテゴリに限定されたものであり、他カテゴリ(文房具・ホーム&リビング等)で
+     軸名`Quantity`/`Color`/`Size`等を使うこと自体は引き続き問題なく検証を通過している)
    - Variation Name2 / Option for Variation 2:2軸目がある場合のみ(例:サイズ/Mサイズ)
    - Variation Integration No.:同一商品グループの全行に共通の連番を付与
    - Image per Variation(M列):**必ず**そのバリエーションの画像URLを入れる(空欄のままだと
