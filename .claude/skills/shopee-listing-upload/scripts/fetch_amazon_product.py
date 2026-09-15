@@ -112,6 +112,20 @@ def _extract_price_from_buybox(desktop_html: str, asin: str) -> dict:
     cm = re.search(r'customerVisiblePrice\]\[currencyCode\]"\s*value="([^"]+)"', segment)
     am = re.search(r'customerVisiblePrice\]\[amount\]"\s*value="([^"]+)"', segment)
     if not cm or not am:
+        # 2026-09-15追加: このASINの`data-csa-c-asin`マーカーが指すウィジェットが
+        # `qualifiedBuybox`(価格を持つ正常な購入フォーム)ではなく
+        # `outOfStockBuyBox`(「この商品は選択したお届け先には発送できません。
+        # 別のお届け先を選択してください。」というアメリカ合衆国宛て地域誤判定の
+        # 文言を持つウィジェット)である場合、customerVisiblePriceフィールドが
+        # 存在しないため単にNoneを返すだけでは不十分だった。その状態のまま
+        # `fetch_product`が信頼度の低い旧方式(`_extract_price_jpy_legacy`)に
+        # フォールバックし、ページ内の無関係な価格表示を拾ってしまう事故が
+        # 6件中2件で発生した(qualifiedBuybox自体がページに存在せず、
+        # outOfStockBuyBoxのみが描画されていたことを確認済み)。
+        # このブロック文言がこのASINの購入フォーム内に見つかった場合は、
+        # 地域誤判定として明示的にフラグを立て、旧方式へのフォールバックを防ぐ。
+        if "この商品は選択したお届け先には発送できません" in segment:
+            result["region_mismatch"] = True
         return result
     currency = cm.group(1)
     result["currency"] = currency
