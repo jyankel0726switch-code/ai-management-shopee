@@ -73,10 +73,15 @@ def build_country_file(country):
         ws.cell(row=row_cursor, column=17, value=10)                         # Q Stock (default 10)
         ws.cell(row=row_cursor, column=18, value=asin)                       # R SKU
         # S,T blank
-        # NOTE: 2026-09-16 run used the feature branch (not yet merged to main) so
-        # the URL below pointed at that branch instead of /main/. Once framed-images/
-        # is merged to main, generate new runs against /main/ as SKILL.md specifies.
-        cover_url = f"https://raw.githubusercontent.com/jyankel0726switch-code/ai-management-shopee/main/framed-images/{asin}_cover.jpg"
+        # NOTE (2026-09-16 run): used the feature branch (not yet merged to main),
+        # so this pointed at that branch instead of /main/ -- switch to /main/ once
+        # framed-images/ is merged, per SKILL.md.
+        # NOTE (cache lesson): Shopee's mass upload tool appears to cache a fetched
+        # cover image by its source URL, so republishing new image content under an
+        # already-used filename did not refresh on re-import. Always publish a
+        # frame-processed cover image under a NEW filename whenever its content
+        # changes (e.g. bump a _v2/_v3 suffix) rather than overwriting the old one.
+        cover_url = f"https://raw.githubusercontent.com/jyankel0726switch-code/ai-management-shopee/main/framed-images/{asin}_cover_v2.jpg"
         ws.cell(row=row_cursor, column=21, value=cover_url)                  # U Cover image
         imgs = p['images'][1:]  # remaining go to Item Image 1..7 (V..AB), first was used as cover source
         for i, url in enumerate(imgs[:7]):
