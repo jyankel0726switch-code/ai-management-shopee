@@ -1,8 +1,8 @@
 """
 add_shopee_frame.py
 
-Shopee出品用Cover画像に「黄色枠＋ピンク十字模様＋Direct From JAPANバナー」を
-自動で加工するスクリプト（従来Canvaで手作業していた加工の自動化版）。
+Shopee出品用Cover画像に「パステルイエロー背景＋白抜き商品枠＋左上ピンクDirect From JAPANテキスト
+＋右上ピンク十字クラスター＋左下ピンク斜めストライプ」を自動で加工するスクリプト。
 
 使い方:
     from add_shopee_frame import add_frame
@@ -14,37 +14,23 @@ Shopee出品用Cover画像に「黄色枠＋ピンク十字模様＋Direct From 
 """
 
 from PIL import Image, ImageDraw, ImageFont
-import math
 import os
 
-# ---- デザイン設定（Canva手作業版の見た目に合わせて調整可能） ----
-CANVAS_SIZE = 1200          # 出力画像は正方形(Shopee推奨)
-BORDER_WIDTH = 60           # 黄色枠の太さ(px)
-BORDER_COLOR = (255, 200, 0)      # 黄色
-CROSS_COLOR = (255, 105, 180, 110)  # ピンク十字模様(半透明)
-CROSS_SPACING = 70          # 十字模様の間隔(px)
-CROSS_SIZE = 14             # 十字1つのサイズ(px)
-CROSS_THICKNESS = 4
-BANNER_HEIGHT = 90
-BANNER_BG = (220, 20, 60)   # バナー背景(クリムゾン)
-BANNER_TEXT_COLOR = (255, 255, 255)
+# ---- デザイン設定 ----
+CANVAS_SIZE = 1200               # 出力画像は正方形(Shopee推奨)
+BG_COLOR = (255, 224, 140)       # パステルイエロー背景
+WHITE = (255, 255, 255)
+PINK = (255, 105, 150)           # テキスト/十字/ストライプのピンク
+INNER_PAD = 22                   # 白枠内の商品画像パディング
 
+TOP_BAND = 108                   # 上部(テキスト/十字用)の余白高さ
+SIDE_MARGIN = 48                 # 左右の黄色マージン
+BOTTOM_MARGIN = 60                # 下部の黄色マージン
 
-def _draw_cross_pattern(draw: ImageDraw.ImageDraw, box, spacing=CROSS_SPACING):
-    """box=(x0,y0,x1,y1) の範囲にピンクの十字模様を敷き詰める"""
-    x0, y0, x1, y1 = box
-    y = y0 + spacing // 2
-    row = 0
-    while y < y1:
-        offset = (spacing // 2) if row % 2 else 0
-        x = x0 + offset
-        while x < x1:
-            half = CROSS_SIZE // 2
-            draw.line([(x - half, y), (x + half, y)], fill=CROSS_COLOR, width=CROSS_THICKNESS)
-            draw.line([(x, y - half), (x, y + half)], fill=CROSS_COLOR, width=CROSS_THICKNESS)
-            x += spacing
-        y += spacing
-        row += 1
+CROSS_SIZE = 26
+CROSS_THICKNESS = 6
+STRIPE_WIDTH = 22
+STRIPE_TRIANGLE = 170
 
 
 def _load_font(size):
@@ -58,49 +44,72 @@ def _load_font(size):
     return ImageFont.load_default()
 
 
+def _draw_cross(draw, cx, cy, size, color, thickness):
+    half = size // 2
+    draw.line([(cx - half, cy), (cx + half, cy)], fill=color, width=thickness)
+    draw.line([(cx, cy - half), (cx, cy + half)], fill=color, width=thickness)
+
+
 def add_frame(input_path: str, output_path: str, banner_text: str = "Direct From JAPAN"):
     """
-    input_path の商品画像に黄色枠＋ピンク十字模様＋バナーを加工し、output_path に保存する。
+    input_path の商品画像に、パステルイエロー背景＋白抜き商品枠＋左上ピンクテキスト
+    ＋右上ピンク十字クラスター＋左下ピンク斜めストライプを加工し、output_path に保存する。
     """
     base = Image.open(input_path).convert("RGB")
 
-    # 正方形キャンバスの中央に商品画像を配置(アスペクト比維持・余白は白)
-    inner = CANVAS_SIZE - 2 * BORDER_WIDTH
-    canvas = Image.new("RGB", (CANVAS_SIZE, CANVAS_SIZE), BORDER_COLOR)
+    canvas = Image.new("RGB", (CANVAS_SIZE, CANVAS_SIZE), BG_COLOR)
+    draw = ImageDraw.Draw(canvas)
 
-    photo_area = inner - BANNER_HEIGHT
-    ratio = min(inner / base.width, photo_area / base.height)
+    sq_x0 = SIDE_MARGIN
+    sq_y0 = TOP_BAND
+    sq_x1 = CANVAS_SIZE - SIDE_MARGIN
+    sq_y1 = CANVAS_SIZE - BOTTOM_MARGIN
+    draw.rectangle([sq_x0, sq_y0, sq_x1, sq_y1], fill=WHITE)
+
+    inner_w = (sq_x1 - sq_x0) - 2 * INNER_PAD
+    inner_h = (sq_y1 - sq_y0) - 2 * INNER_PAD
+    ratio = min(inner_w / base.width, inner_h / base.height)
     new_w, new_h = int(base.width * ratio), int(base.height * ratio)
     resized = base.resize((new_w, new_h), Image.LANCZOS)
+    paste_x = sq_x0 + INNER_PAD + (inner_w - new_w) // 2
+    paste_y = sq_y0 + INNER_PAD + (inner_h - new_h) // 2
+    canvas.paste(resized, (paste_x, paste_y))
 
-    white_bg = Image.new("RGB", (inner, photo_area), (255, 255, 255))
-    paste_x = (inner - new_w) // 2
-    paste_y = (photo_area - new_h) // 2
-    white_bg.paste(resized, (paste_x, paste_y))
-    canvas.paste(white_bg, (BORDER_WIDTH, BORDER_WIDTH))
-
-    # ピンク十字模様を黄色枠の上に重ねる(半透明合成)
-    overlay = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
-    odraw = ImageDraw.Draw(overlay)
-    # 上枠・下枠・左枠・右枠それぞれに模様を敷く
-    _draw_cross_pattern(odraw, (0, 0, CANVAS_SIZE, BORDER_WIDTH))
-    _draw_cross_pattern(odraw, (0, CANVAS_SIZE - BORDER_WIDTH, CANVAS_SIZE, CANVAS_SIZE))
-    _draw_cross_pattern(odraw, (0, 0, BORDER_WIDTH, CANVAS_SIZE))
-    _draw_cross_pattern(odraw, (CANVAS_SIZE - BORDER_WIDTH, 0, CANVAS_SIZE, CANVAS_SIZE))
-    canvas = Image.alpha_composite(canvas.convert("RGBA"), overlay).convert("RGB")
-
-    # 下部に「Direct From JAPAN」バナー
     draw = ImageDraw.Draw(canvas)
-    banner_y0 = BORDER_WIDTH + photo_area
-    banner_y1 = banner_y0 + BANNER_HEIGHT
-    draw.rectangle([BORDER_WIDTH, banner_y0, CANVAS_SIZE - BORDER_WIDTH, banner_y1], fill=BANNER_BG)
 
-    font = _load_font(40)
-    bbox = draw.textbbox((0, 0), banner_text, font=font)
-    tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
-    tx = (CANVAS_SIZE - tw) // 2
-    ty = banner_y0 + (BANNER_HEIGHT - th) // 2 - bbox[1]
-    draw.text((tx, ty), banner_text, fill=BANNER_TEXT_COLOR, font=font)
+    # 左上: "Direct From JAPAN" テキスト
+    font = _load_font(52)
+    draw.text((28, 18), banner_text, fill=PINK, font=font)
+
+    # 右上: ピンク十字クラスター
+    cross_positions = [
+        (CANVAS_SIZE - 90, 55), (CANVAS_SIZE - 40, 55), (CANVAS_SIZE - 15, 80),
+        (CANVAS_SIZE - 90, 100), (CANVAS_SIZE - 40, 100),
+    ]
+    for (cx, cy) in cross_positions:
+        _draw_cross(draw, cx, cy, CROSS_SIZE, PINK, CROSS_THICKNESS)
+
+    # 左下: ピンク/白の斜めストライプ(三角形にマスク)
+    stripe_overlay = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
+    sdraw = ImageDraw.Draw(stripe_overlay)
+    toggle = False
+    total = CANVAS_SIZE + STRIPE_TRIANGLE
+    x = -total
+    while x < STRIPE_TRIANGLE:
+        color = PINK + (255,) if toggle else WHITE + (255,)
+        sdraw.line([(x, CANVAS_SIZE), (x + total, CANVAS_SIZE - total)], fill=color, width=STRIPE_WIDTH)
+        x += STRIPE_WIDTH * 2
+        toggle = not toggle
+
+    mask = Image.new("L", canvas.size, 0)
+    mdraw = ImageDraw.Draw(mask)
+    mdraw.polygon(
+        [(0, CANVAS_SIZE - STRIPE_TRIANGLE), (0, CANVAS_SIZE), (STRIPE_TRIANGLE, CANVAS_SIZE)],
+        fill=255,
+    )
+    stripe_alpha = Image.composite(stripe_overlay.split()[3], Image.new("L", canvas.size, 0), mask)
+    stripe_overlay.putalpha(stripe_alpha)
+    canvas = Image.alpha_composite(canvas.convert("RGBA"), stripe_overlay).convert("RGB")
 
     canvas.save(output_path, quality=92)
     return output_path
