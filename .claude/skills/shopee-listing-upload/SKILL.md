@@ -160,7 +160,7 @@ Shopeeへの登録に失敗した。** 各テンプレートの`Upload sample`�
 | T | Size Chart Image | Conditional Mandatory | 空欄でよい |
 | U | Cover image | Optional | 5.6のフレーム加工が完了した場合はフレーム加工済み画像のURL(`https://raw.githubusercontent.com/jyankel0726switch-code/ai-management-shopee/main/framed-images/{ASIN}_cover.jpg`)を入れる。5.6が実行環境の制約により完了できない場合、またはフレーム加工・pushに失敗した場合のみ、5で取得したAmazon商品ページの画像URL(1枚目)をそのまま入れる |
 | V〜AC | Item Image 1〜8 | Optional | 5で取得した2枚目以降の画像URLを取得順にV列から1列ずつ反映(最大7枚取得のため実質V〜AB列を使用。取得できた枚数分のみ埋め、残りは空欄のまま無理に埋めない)。フレーム加工は行わない |
-| AD | Weight | Mandatory | 6で推定 |
+| AD | Weight | Mandatory | 6で推定。**単位はkg**(g表記の値はkgに換算して入力。例: 170g→0.17) |
 | AE | Length | Conditional Mandatory | 6で推定(不明なら要確認フラグを立てて一般的な仮値) |
 | AF | Width | Conditional Mandatory | 同上 |
 | AG | Height | Conditional Mandatory | 同上 |
@@ -373,6 +373,12 @@ Amazon商品ページの「商品情報」「詳細情報」「追加情報」�
 要確認フラグを立てない。
 Amazon商品ページに記載がない場合のみ、「ASIN」や商品カテゴリから判断できる重量・サイズを
 推定し、一般的な仮値を入力した上で要確認フラグを立てる。
+
+**重量の単位は必ずkg(キログラム)で入力すること。** Shopeeテンプレートの重量列(AD列)の
+入力ガイドは「Please input 0.00 to 100000.00 kg for product weight.」であり、g(グラム)
+単位のまま数値を入れると実際の重量の1000倍として登録され、送料・関税計算に重大な誤りが
+生じる。Amazon商品ページの重量表記が「170 グラム」「0.2 キログラム」等どの単位であっても、
+必ずkgに換算してから(例: 170グラム→0.17、200g→0.2)テンプレートに書き込む。
 
 ### 7. カテゴリIDの設定
 `template/Shopee_mass_upload_basic_template.xlsx`内の「Pre-order DTS Range」シート
