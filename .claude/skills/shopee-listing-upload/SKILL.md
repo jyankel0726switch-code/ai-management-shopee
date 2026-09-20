@@ -105,7 +105,7 @@ Shopeeは国ごとに配送チャネル列や価格倍率上限、商品名の�
 
 | 国 | 使用テンプレート | 主な違い |
 |---|---|---|
-| MY | `template/Shopee_mass_upload_template_MY.xlsx` | 配送チャネル列が「Doorstep Delivery - Japan」「SPX Express Lockers (Overseas)」の2列。価格倍率上限7倍(基本版は5倍)。商品名は10〜255文字 |
+| MY | `template/Shopee_mass_upload_template_MY.xlsx` | 配送チャネル列が「Doorstep Delivery - Japan」「SPX Express Lockers (Overseas)」の2列。**SPX Express Lockers (Overseas)は商品価格がMYR100.00を超えると選択不可(テンプレートのガイド行に明記)** のため、価格がMYR100以下の商品のみOnにする。価格倍率上限7倍(基本版は5倍)。商品名は10〜255文字 |
 | SG | `template/Shopee_mass_upload_template_SG.xlsx` | 配送チャネル列が3列(Doorstep Delivery/Collection Points/SPX Express Lockers)。商品名は10〜255文字。価格0.10〜999999.00(2026-08-20更新: 従来あった「5-Day Delivery」列がShopee側で廃止されたため、最新の公式テンプレートに差し替え済み) |
 | TH | `template/Shopee_mass_upload_template_TH.xlsx` | 配送チャネル列が「International Express (Japan)」の1列。商品名は20〜255文字。価格1〜500000 |
 | PH | `template/Shopee_mass_upload_template_PH.xlsx` | 配送チャネル列が「Standard International」の1列。商品名は20〜255文字。価格5〜100000 |
@@ -405,6 +405,12 @@ Templateシートの該当行のCategory列(A列)に入力する。
 基本テンプレートの場合、AH(Doorstep Delivery)/AI(Collection Points)/AJ(SPX Express
 Lockers)の3列に「On」を入れる(上記「配送チャネルのデフォルト方針」を参照)。
 国別専用テンプレートを使う場合は、そのテンプレートのチャネル列構成に従う。
+
+**MYテンプレートの注意**: 「Doorstep Delivery - Japan」列は常にOnにする。
+「SPX Express Lockers (Overseas)」列は、テンプレートのガイド行に「item price cannot
+be greater than MYR100.00」と明記されているとおり価格上限があるため、その商品の
+現地価格(P列に入れる計算後の価格)がMYR100.00以下の場合のみOnにする。MYR100.00を
+超える商品はOffのままにする(誤ってOnにするとShopeeアップロード時にエラーになる)。
 
 ### 9. テンプレートへの書き込み
 国別テンプレートの使い分け表に従い、該当する`template/*.xlsx`をコピーし、
