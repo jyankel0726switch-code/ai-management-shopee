@@ -1,0 +1,74 @@
+name: Auto-merge Claude image PRs
+
+# Automatically approves and merges pull requests opened from a `claude/*`
+# branch, but ONLY when every changed file is a framed cover image under
+# `framed-images/` (the daily shopee-listing-upload run's Cover image
+# artifacts, referenced by generated xlsx files via a raw.githubusercontent
+# URL that must live on `main` to resolve). Any PR that touches so much as
+# one other file (code, workflows, other data) is left for normal human
+# review and is NOT auto-merged.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches:
+      - main
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    if: >
+      startsWith(github.event.pull_request.head.ref, 'claude/') &&
+      github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify PR only touches framed-images/*.jpg|jpeg|png
+        id: filecheck
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number,
+              per_page: 100,
+            });
+            const isAllowed = (f) =>
+              f.filename.startsWith('framed-images/') &&
+              /\.(jpe?g|png)$/i.test(f.filename) &&
+              f.status !== 'removed';
+            const allowed = files.length > 0 && files.every(isAllowed);
+            core.info(`Changed files (${files.length}): ${files.map(f => f.filename).join(', ')}`);
+            core.setOutput('allowed', allowed ? 'true' : 'false');
+
+      - name: Approve pull request
+        if: steps.filecheck.outputs.allowed == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.pulls.createReview({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number,
+              event: 'APPROVE',
+              body: 'Auto-approved: this PR only adds/updates framed cover images under `framed-images/` from an automated `claude/*` branch.',
+            });
+
+      - name: Merge pull request
+        if: steps.filecheck.outputs.allowed == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            try {
+              await github.rest.pulls.merge({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: context.payload.pull_request.number,
+                merge_method: 'squash',
+              });
+            } catch (e) {
+              core.setFailed(`Auto-merge failed (branch protection or permissions may need adjusting): ${e.message}`);
+            }
