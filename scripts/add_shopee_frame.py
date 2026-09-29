@@ -2,7 +2,7 @@
 add_shopee_frame.py
 
 Shopee出品用Cover画像に「パステルイエロー背景＋白抜き商品枠＋左上ピンクDirect From JAPANテキスト
-＋右上ピンク十字クラスター＋左下ピンク斜めストライプ」を自動で加工するスクリプト。
+＋右端の薄ピンク十字＋左端の薄ピンク斜めストライプ」を自動で加工するスクリプト。
 
 使い方:
     from add_shopee_frame import add_frame
@@ -18,19 +18,26 @@ import os
 
 # ---- デザイン設定 ----
 CANVAS_SIZE = 1200               # 出力画像は正方形(Shopee推奨)
-BG_COLOR = (255, 224, 140)       # パステルイエロー背景
+BG_COLOR = (255, 228, 147)       # パステルイエロー背景(見本 #FFE493)
 WHITE = (255, 255, 255)
-PINK = (255, 105, 150)           # テキスト/十字/ストライプのピンク
+PINK = (254, 86, 122)            # テキストのピンク(見本 #FE567A)
+CROSS_PINK = (255, 177, 232)     # 十字のピンク(見本 #FFB1E8)
+STRIPE_PINK = (255, 183, 226)    # ストライプのピンク(見本 #FFB7E2)
 INNER_PAD = 22                   # 白枠内の商品画像パディング
 
-TOP_BAND = 108                   # 上部(テキスト/十字用)の余白高さ
-SIDE_MARGIN = 48                 # 左右の黄色マージン
-BOTTOM_MARGIN = 60                # 下部の黄色マージン
+TOP_BAND = 113                   # 上部(テキスト/十字用)の余白高さ
+SIDE_MARGIN = 55                 # 左右の黄色マージン
+BOTTOM_MARGIN = 64                # 下部の黄色マージン
 
-CROSS_SIZE = 26
+# 見本(500px)を1200pxに拡大(x2.4)した寸法
+CROSS_SIZE = 22                  # 十字の全幅
 CROSS_THICKNESS = 6
-STRIPE_WIDTH = 22
-STRIPE_TRIANGLE = 170
+CROSS_COLS = (1157, 1193)        # 右端の2列(x中心)
+CROSS_ROW0, CROSS_PITCH, CROSS_ROWS = 12, 35.5, 7
+STRIPE_BAND = 22                 # ストライプ(ピンク)の縦幅
+STRIPE_PERIOD = 52               # ストライプの周期(縦方向)
+STRIPE_START = 691               # ストライプ開始位置(x=0でのy)
+STRIPE_STRIP_W = SIDE_MARGIN     # ストライプは左端の細い帯(白枠の手前)だけ
 
 
 def _load_font(size):
@@ -53,7 +60,7 @@ def _draw_cross(draw, cx, cy, size, color, thickness):
 def add_frame(input_path: str, output_path: str, banner_text: str = "Direct From JAPAN"):
     """
     input_path の商品画像に、パステルイエロー背景＋白抜き商品枠＋左上ピンクテキスト
-    ＋右上ピンク十字クラスター＋左下ピンク斜めストライプを加工し、output_path に保存する。
+    ＋右端の薄ピンク十字＋左端の薄ピンク斜めストライプを加工し、output_path に保存する。
     """
     base = Image.open(input_path).convert("RGB")
 
@@ -78,38 +85,30 @@ def add_frame(input_path: str, output_path: str, banner_text: str = "Direct From
     draw = ImageDraw.Draw(canvas)
 
     # 左上: "Direct From JAPAN" テキスト
-    font = _load_font(52)
-    draw.text((28, 18), banner_text, fill=PINK, font=font)
+    font = _load_font(62)
+    draw.text((10, 12), banner_text, fill=PINK, font=font)
 
-    # 右上: ピンク十字クラスター
-    cross_positions = [
-        (CANVAS_SIZE - 90, 55), (CANVAS_SIZE - 40, 55), (CANVAS_SIZE - 15, 80),
-        (CANVAS_SIZE - 90, 100), (CANVAS_SIZE - 40, 100),
-    ]
-    for (cx, cy) in cross_positions:
-        _draw_cross(draw, cx, cy, CROSS_SIZE, PINK, CROSS_THICKNESS)
+    # 右端: 薄ピンクの十字(2列x7段。右列は画像端で少し切れる)
+    for cx in CROSS_COLS:
+        for i in range(CROSS_ROWS):
+            _draw_cross(draw, cx, round(CROSS_ROW0 + CROSS_PITCH * i), CROSS_SIZE, CROSS_PINK, CROSS_THICKNESS)
 
-    # 左下: ピンク/白の斜めストライプ(三角形にマスク)
-    stripe_overlay = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
-    sdraw = ImageDraw.Draw(stripe_overlay)
-    toggle = False
-    total = CANVAS_SIZE + STRIPE_TRIANGLE
-    x = -total
-    while x < STRIPE_TRIANGLE:
-        color = PINK + (255,) if toggle else WHITE + (255,)
-        sdraw.line([(x, CANVAS_SIZE), (x + total, CANVAS_SIZE - total)], fill=color, width=STRIPE_WIDTH)
-        x += STRIPE_WIDTH * 2
-        toggle = not toggle
-
-    mask = Image.new("L", canvas.size, 0)
-    mdraw = ImageDraw.Draw(mask)
-    mdraw.polygon(
-        [(0, CANVAS_SIZE - STRIPE_TRIANGLE), (0, CANVAS_SIZE), (STRIPE_TRIANGLE, CANVAS_SIZE)],
-        fill=255,
-    )
-    stripe_alpha = Image.composite(stripe_overlay.split()[3], Image.new("L", canvas.size, 0), mask)
-    stripe_overlay.putalpha(stripe_alpha)
-    canvas = Image.alpha_composite(canvas.convert("RGBA"), stripe_overlay).convert("RGB")
+    # 左端: 薄ピンクの斜めストライプ(左端の細い帯の中だけ、下端まで)
+    SS = 3
+    layer = Image.new("L", (STRIPE_STRIP_W * SS, (CANVAS_SIZE - STRIPE_START) * SS), 0)
+    ldraw = ImageDraw.Draw(layer)
+    h = layer.height
+    k = -2
+    while True:
+        y0 = k * STRIPE_PERIOD * SS
+        if y0 > h + STRIPE_STRIP_W * SS:
+            break
+        # 右下がりの平行四辺形(x=0で縦幅STRIPE_BAND、45度)
+        w = STRIPE_STRIP_W * SS
+        ldraw.polygon([(0, y0), (0, y0 + STRIPE_BAND * SS), (w, y0 + STRIPE_BAND * SS + w), (w, y0 + w)], fill=255)
+        k += 1
+    layer = layer.resize((STRIPE_STRIP_W, CANVAS_SIZE - STRIPE_START), Image.LANCZOS)
+    canvas.paste(Image.new("RGB", layer.size, STRIPE_PINK), (0, STRIPE_START), layer)
 
     canvas.save(output_path, quality=92)
     return output_path
