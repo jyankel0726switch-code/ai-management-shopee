@@ -344,8 +344,11 @@ Amazon商品ページの説明文・レビュー文をそのまま転記・要�
    - バナー文言はデフォルトの "Direct From JAPAN" を使用する。
    - 出力ファイル名は `framed-images/{ASIN}_cover.jpg` とする。
 3. 加工済み画像をGitHubリポジトリ ai-management-shopee の `framed-images/` フォルダにコミット・pushする。
-   - **mainへの反映**: `.github/workflows/auto-merge-claude-images.yml` は、`claude/*` ブランチから main への PR で、変更ファイルが `framed-images/` 配下の画像だけの場合に限り自動承認・自動マージする。そのため、画像のPRには画像以外(スキル・コード・xlsx等)を含めない。画像だけのPRを作る(スキル・コード変更は別ブランチ/別PR)。
-   - マージ後、Cover URL(raw.githubusercontent.com/.../main/framed-images/{ASIN}_cover.jpg)が HTTP 200 を返すことを `curl -s -o /dev/null -w "%{http_code}"` で確認する。200にならないURLはExcelに書かず「要確認：フレーム加工未実施」扱いにする。
+   - **mainへの反映(手動作業なし・毎回この手順で自動実行する)**: `.github/workflows/auto-merge-claude-images.yml` は、`claude/*` ブランチから main へのPRで、変更ファイルが `framed-images/` 配下の画像だけの場合に限り自動承認・自動マージする。画像以外(スキル・コード・xlsx等)が1つでも混ざると自動マージされないため、必ず画像だけのPRにする。
+     1. その日の画像だけをコミットした専用ブランチ `claude/framed-images-{YYYY-MM-DD}`(JST)を、最新の main から作って push する(他のファイルは含めない)。
+     2. main 宛てのPRを作成する(GitHub MCPの create_pull_request)。自動承認・自動マージを待つ(最大10分、30秒間隔で状態を確認)。
+     3. マージ後、各 Cover URL(raw.githubusercontent.com/.../main/framed-images/{ASIN}_cover.jpg)が HTTP 200 を返すことを `curl -s -o /dev/null -w "%{http_code}"` で確認してから Excel を作る。
+     4. 10分待っても200にならないURL、またはPR作成・pushに失敗した場合は、そのURLをExcelに書かず、元のAmazon画像URLを使い「要確認：フレーム加工未実施」フラグを立ててレポートに理由を書く(処理は止めずファイル作成は続行する)。
 4. push後、以下の形式のURLをCover image（U列）に入力する。
    `https://raw.githubusercontent.com/jyankel0726switch-code/ai-management-shopee/main/framed-images/{ASIN}_cover.jpg`
 5. Item Image 1〜8（V〜AC列）は従来通りAmazon画像のURLをそのまま使用し、フレーム加工は行わない。
