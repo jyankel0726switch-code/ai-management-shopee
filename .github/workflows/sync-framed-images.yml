@@ -1,0 +1,53 @@
+# framed-images/ に追加・更新された画像を、自動で main に反映する。
+# Shopee出品ファイルのCover image URLは main の raw URL を指すため、
+# 作業ブランチに push しただけで画像が404になるのを防ぐ。
+name: Sync framed images to main
+
+on:
+  push:
+    branches-ignore:
+      - main
+    paths:
+      - 'framed-images/**'
+  workflow_dispatch:
+    inputs:
+      source_branch:
+        description: 'framed-images/ を取り込むブランチ名'
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-framed-images
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Copy framed-images from source branch into main
+        env:
+          SRC: ${{ github.event.inputs.source_branch || github.ref_name }}
+        run: |
+          git fetch origin "$SRC"
+          # framed-images/ 配下だけを取り込む(他のファイルには触れない)
+          git checkout "origin/$SRC" -- framed-images
+          if git diff --cached --quiet; then
+            echo "main に反映する新しい画像はありません"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Sync framed-images from $SRC"
+          for i in 1 2 3; do
+            git pull --rebase origin main && git push origin HEAD:main && exit 0
+            sleep $((i*5))
+          done
+          exit 1
