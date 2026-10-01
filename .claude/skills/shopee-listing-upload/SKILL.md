@@ -170,6 +170,8 @@ Shopeeへの登録に失敗した。** 各テンプレートの`Upload sample`�
 | AK | Pre-order DTS | Optional | 5.7のルールに従って設定(発送予定日が明日より後なら固定値10、それ以外は空欄) |
 | AL | Fail Reason | — | Shopee側が出力に使う列。書き込み対象外(空欄のまま) |
 
+**MY の配送チャネルは価格・重量で切り替える**: MY テンプレートの「SPX Express Lockers (Overseas)」列は、重量2kg以下かつ販売価格RM100以下の商品のみ「On」にする。RM100を超える、または2kgを超える商品は「Off」にする(Shopeeで「Price Exceeded RM100.00」エラーになるため)。「Doorstep Delivery - Japan」(上限50kg)は常に「On」。判定は算出後のMY現地価格(Price列)で行う。
+
 **配送チャネルのデフォルト方針**: AH/AI/AJの少なくとも1つをOnにしないとShopee側で
 アップロードエラーになる。方針が別途指定されない限り、基本版では3チャネルすべて
 Onにする(過去の国別テンプレートでの運用にならい、配送手段を絞る必要が出てきたら
