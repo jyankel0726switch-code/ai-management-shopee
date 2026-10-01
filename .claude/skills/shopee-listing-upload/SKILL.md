@@ -344,8 +344,8 @@ Amazon商品ページの説明文・レビュー文をそのまま転記・要�
    - バナー文言はデフォルトの "Direct From JAPAN" を使用する。
    - 出力ファイル名は `framed-images/{ASIN}_cover.jpg` とする。
 3. 加工済み画像をGitHubリポジトリ ai-management-shopee の `framed-images/` フォルダにコミット・pushする。
-   - `.github/workflows/sync-framed-images.yml` が、`framed-images/` に push された画像を自動で main に反映する(作業ブランチへの push だけで main にも入る)。
-   - 反映後、Cover URL(raw.githubusercontent.com/.../main/framed-images/{ASIN}_cover.jpg)が HTTP 200 を返すことを `curl -s -o /dev/null -w "%{http_code}"` で確認する。数分待っても200にならない場合は、そのURLを書かず「要確認：フレーム加工未実施」扱いにする(404のURLをExcelに書かない)。
+   - **mainへの反映**: `.github/workflows/auto-merge-claude-images.yml` は、`claude/*` ブランチから main への PR で、変更ファイルが `framed-images/` 配下の画像だけの場合に限り自動承認・自動マージする。そのため、画像のPRには画像以外(スキル・コード・xlsx等)を含めない。画像だけのPRを作る(スキル・コード変更は別ブランチ/別PR)。
+   - マージ後、Cover URL(raw.githubusercontent.com/.../main/framed-images/{ASIN}_cover.jpg)が HTTP 200 を返すことを `curl -s -o /dev/null -w "%{http_code}"` で確認する。200にならないURLはExcelに書かず「要確認：フレーム加工未実施」扱いにする。
 4. push後、以下の形式のURLをCover image（U列）に入力する。
    `https://raw.githubusercontent.com/jyankel0726switch-code/ai-management-shopee/main/framed-images/{ASIN}_cover.jpg`
 5. Item Image 1〜8（V〜AC列）は従来通りAmazon画像のURLをそのまま使用し、フレーム加工は行わない。
