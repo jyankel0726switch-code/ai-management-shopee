@@ -1,0 +1,9 @@
+{
+  "spreadsheet_id": "1dpMd8z_WmGTtiM5UBn30iAGmahFuCU1JGU8KWc6IgZ0",
+  "spreadsheet_name": "Shopeeリサーチ",
+  "items_tab": "競合店_売れ筋",
+  "amazon_tab": "競合店_Amazon照合",
+  "log_tab": "競合店_実行ログ",
+  "amazon_check_limit": 15,
+  "input_tab": "競合店_入力"
+}
